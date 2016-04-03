@@ -31,6 +31,7 @@ class RunTask extends Exec {
 
         commandLine('docker',
                 'run',
+                '--rm',
                 '-w', '/workspace',
                 '-v', "${project.rootDir.absolutePath}:/workspace",
                 '-v', "${homeDir}/.docker:/root/.docker",

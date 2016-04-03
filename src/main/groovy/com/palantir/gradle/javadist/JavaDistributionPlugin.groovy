@@ -61,10 +61,6 @@ class JavaDistributionPlugin implements Plugin<Project> {
                 runTask.dependsOn(buildTask)
                 runDockerTasks << runTask
 
-                def stopTask = project.tasks.create("stop${TASK_STRING}-${containerName}", StopTask)
-                stopTask.configure(containerName)
-                runTask.finalizedBy(stopTask)
-
                 def testTask = project.tasks.create(getTestTaskName(containerName), TestTask)
                 testTask.configure(containerName)
             })
