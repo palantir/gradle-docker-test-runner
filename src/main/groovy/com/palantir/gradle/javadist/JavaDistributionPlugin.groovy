@@ -22,15 +22,11 @@ import org.gradle.api.file.FileCollection
 
 class JavaDistributionPlugin implements Plugin<Project> {
 
-    private static final String GROUP_NAME = "Docker Test Runners"
-    private static final String TASK_STRING = "DockerEnv"
+    private static final String GROUP_NAME = 'Docker Test Runners'
+    private static final String TASK_STRING = 'DockerEnv'
 
     static String getContainerRunName(Project project, String containerName) {
         return "${project.name}-${sanitize(containerName)}"
-    }
-
-    static String getTestTaskName(String containerName) {
-        return "test${TASK_STRING}-${containerName}";
     }
 
     void apply(Project project) {
@@ -43,41 +39,58 @@ class JavaDistributionPlugin implements Plugin<Project> {
             }
 
             List<Task> buildDockerTasks = []
-            List<Task> runDockerTasks = []
+            List<Task> testDockerTasks = []
+            List<Task> jacocoDockerTasks = []
 
             dockerFiles.each({ containerName, dockerFile ->
+                String currGroupName = getGroupName(containerName)
+
                 BuildTask buildTask = project.tasks.create("build${TASK_STRING}-${containerName}", BuildTask, {
-                    group = GROUP_NAME
+                    group = currGroupName
                     description = "Build the Docker test environment container ${containerName}."
                 })
                 buildTask.configure(containerName, dockerFile)
                 buildDockerTasks << buildTask
 
-                RunTask runTask = project.tasks.create("run${TASK_STRING}-${containerName}", RunTask, {
-                    group = GROUP_NAME
+                RunTask runTask = project.tasks.create("runTest${TASK_STRING}-${containerName}", RunTask, {
+                    group = currGroupName
                     description = "Run tests in the Docker test environment container ${containerName}."
                 })
-                runTask.configure(containerName, ext.customDockerRunArgs)
+                runTask.configure(getTestTaskName(containerName), containerName, ext.customDockerRunArgs)
                 runTask.dependsOn(buildTask)
-                runDockerTasks << runTask
+                testDockerTasks << runTask
+
+                RunTask runJacocoReportTask = project.tasks.create("runJacocoTestReport${TASK_STRING}-${containerName}", RunTask, {
+                    group = currGroupName
+                    description = "Generate Jacoco coverage report in the Docker test environment container ${containerName}."
+                })
+                runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, ext.customDockerRunArgs)
+                runJacocoReportTask.dependsOn(buildTask)
+                jacocoDockerTasks << runJacocoReportTask
 
                 TestTask testTask = project.tasks.create(getTestTaskName(containerName), TestTask)
                 testTask.configure(containerName)
 
-                JacocoTask jacocoTask = project.tasks.create("jacoco${TASK_STRING}-${containerName}", JacocoTask)
-                jacocoTask.configure(containerName, ext.jacocoClassDirectories)
-                jacocoTask.dependsOn(testTask)
+                JacocoReportTask jacocoReportTask = project.tasks.create(getJacocoTaskName(containerName), JacocoReportTask)
+                jacocoReportTask.configure(containerName, ext.jacocoClassDirectories)
+                jacocoReportTask.dependsOn(testTask)
             })
 
+            String allGroupName = getGroupName("All")
             project.task("build${TASK_STRING}", {
-                group = GROUP_NAME
+                group = allGroupName
                 description = "Build all of the Docker test environment containers."
             }).setDependsOn(buildDockerTasks)
 
             project.task("test${TASK_STRING}", {
-                group = GROUP_NAME
-                description = "Run all of the Docker test environment containers."
-            }).setDependsOn(runDockerTasks)
+                group = allGroupName
+                description = "Run tests in all of the Docker test environment containers."
+            }).setDependsOn(testDockerTasks)
+
+            project.task("jacocoTestReport${TASK_STRING}", {
+                group = allGroupName
+                description = "Generate Jacoco coverage reports in all of the Docker test environment containers."
+            }).setDependsOn(testDockerTasks)
         }
     }
 
@@ -122,6 +135,19 @@ class JavaDistributionPlugin implements Plugin<Project> {
         }
 
         return builder.toString()
+    }
+
+    private static String getGroupName(String subGroup) {
+        return "${GROUP_NAME}: ${subGroup}"
+
+    }
+
+    private static String getTestTaskName(String containerName) {
+        return "test${TASK_STRING}-${containerName}";
+    }
+
+    private static String getJacocoTaskName(String containerName) {
+        return "jacocoTestReport${TASK_STRING}-${containerName}";
     }
 
 }

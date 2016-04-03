@@ -25,7 +25,7 @@ class RunTask extends Exec {
      * command. Loads the project root directory as 'workspace' in the Docker container and loads the Docker, Gradle
      * and Maven cache directories from the user's home directory into the container as well.
      */
-    public void configure(String containerName, Multimap<String, String> customArguments) {
+    public void configure(String taskName, String containerName, Multimap<String, String> customArguments) {
         workingDir(project.rootDir)
 
         String homeDir = System.getProperty('user.home')
@@ -49,7 +49,7 @@ class RunTask extends Exec {
         arguments << '--name' << JavaDistributionPlugin.getContainerRunName(project, containerName)
         arguments << containerName
         arguments << '/bin/bash' << '-c'
-        arguments << "./gradlew --stacktrace :${project.name}:${JavaDistributionPlugin.getTestTaskName(containerName)}"
+        arguments << "./gradlew --stacktrace :${project.name}:${taskName}"
 
         commandLine(arguments)
     }

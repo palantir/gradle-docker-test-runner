@@ -18,7 +18,7 @@ package com.palantir.gradle.javadist
 import org.gradle.api.file.FileCollection
 import org.gradle.testing.jacoco.tasks.JacocoReport
 
-class JacocoTask extends JacocoReport {
+class JacocoReportTask extends JacocoReport {
 
     /**
      * Configures the task to run all of the tests for the current project. Modifies the JUnit XML and HTML test report
