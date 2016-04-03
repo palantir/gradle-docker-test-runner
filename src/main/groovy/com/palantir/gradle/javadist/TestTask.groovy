@@ -15,7 +15,9 @@
  */
 package com.palantir.gradle.javadist
 
+import org.gradle.api.Project
 import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 
 class TestTask extends Test {
 
@@ -29,19 +31,29 @@ class TestTask extends Test {
         testClassesDir = project.sourceSets.test.output.classesDir
         classpath = project.sourceSets.test.runtimeClasspath
 
-        String sanitizedName = sanitize(containerName)
-        reports.junitXml.destination("${reports.junitXml.getDestination().absolutePath}-${sanitizedName}")
-        reports.html.destination("${reports.html.getDestination().absolutePath}-${sanitizedName}")
+        String sanitizedName = sanitizeForPath(containerName)
+        reports.junitXml.destination("${project.test.reports.junitXml.getDestination().absolutePath}-${sanitizedName}")
+        reports.html.destination("${project.test.reports.html.getDestination().absolutePath}-${sanitizedName}")
 
         include("**/*")
+
+        ((JacocoTaskExtension) jacoco).destinationFile = getJacocoDestinationFile(project, containerName)
     }
 
     /**
      * Returns the provided String with all '/' characters replaced with '_' so that the name can be used as part
      * of a path without causing directories to be created.
      */
-    private static String sanitize(String name) {
+    static String sanitizeForPath(String name) {
         return name.replaceAll('/', '_')
+    }
+
+    /**
+     * Returns the File where the Jacoco raw coverage data is written for the tests in the given project for the given
+     * container.
+     */
+    static File getJacocoDestinationFile(Project project, String containerName) {
+        return new File("${project.getBuildDir()}/jacoco/${sanitizeForPath(containerName)}.exec")
     }
 
 }

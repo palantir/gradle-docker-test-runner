@@ -15,6 +15,7 @@
  */
 package com.palantir.gradle.javadist
 
+import com.google.common.collect.Multimap
 import org.gradle.api.tasks.Exec
 
 class RunTask extends Exec {
@@ -24,22 +25,33 @@ class RunTask extends Exec {
      * command. Loads the project root directory as 'workspace' in the Docker container and loads the Docker, Gradle
      * and Maven cache directories from the user's home directory into the container as well.
      */
-    public void configure(String containerName) {
+    public void configure(String containerName, Multimap<String, String> customArguments) {
         workingDir(project.rootDir)
 
         String homeDir = System.getProperty('user.home')
 
-        commandLine('docker',
-                'run',
-                '--rm',
-                '-w', '/workspace',
-                '-v', "${project.rootDir.absolutePath}:/workspace",
-                '-v', "${homeDir}/.docker:/root/.docker",
-                '-v', "${homeDir}/.gradle:/root/.gradle",
-                '-v', "${homeDir}/.m2:/root/.m2",
-                '--name', JavaDistributionPlugin.getContainerRunName(project, containerName),
-                containerName,
-                '/bin/bash', '-c', "./gradlew --stacktrace :${project.name}:${JavaDistributionPlugin.getTestTaskName(containerName)}")
+        List<Object> arguments = []
+        arguments << 'docker' << 'run'
+
+        // add custom arguments
+        customArguments.asMap().each({ key, values ->
+            values.each({ value ->
+                arguments << key << value
+            })
+        })
+
+        arguments << '--rm'
+        arguments << '-w' << '/workspace'
+        arguments << '-v' << "${project.rootDir.absolutePath}:/workspace"
+        arguments << '-v' << "${homeDir}/.docker:/root/.docker"
+        arguments << '-v' << "${homeDir}/.gradle:/root/.gradle"
+        arguments << '-v' << "${homeDir}/.m2:/root/.m2"
+        arguments << '--name' << JavaDistributionPlugin.getContainerRunName(project, containerName)
+        arguments << containerName
+        arguments << '/bin/bash' << '-c'
+        arguments << "./gradlew --stacktrace :${project.name}:${JavaDistributionPlugin.getTestTaskName(containerName)}"
+
+        commandLine(arguments)
     }
 
 }

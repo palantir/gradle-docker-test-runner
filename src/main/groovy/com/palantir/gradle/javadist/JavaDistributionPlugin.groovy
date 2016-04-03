@@ -46,23 +46,27 @@ class JavaDistributionPlugin implements Plugin<Project> {
             List<Task> runDockerTasks = []
 
             dockerFiles.each({ containerName, dockerFile ->
-                def buildTask = project.tasks.create("build${TASK_STRING}-${containerName}", BuildTask, {
+                BuildTask buildTask = project.tasks.create("build${TASK_STRING}-${containerName}", BuildTask, {
                     group = GROUP_NAME
                     description = "Build the Docker test environment container ${containerName}."
                 })
                 buildTask.configure(containerName, dockerFile)
                 buildDockerTasks << buildTask
 
-                def runTask = project.tasks.create("run${TASK_STRING}-${containerName}", RunTask, {
+                RunTask runTask = project.tasks.create("run${TASK_STRING}-${containerName}", RunTask, {
                     group = GROUP_NAME
                     description = "Run tests in the Docker test environment container ${containerName}."
                 })
-                runTask.configure(containerName)
+                runTask.configure(containerName, ext.customDockerRunArgs)
                 runTask.dependsOn(buildTask)
                 runDockerTasks << runTask
 
-                def testTask = project.tasks.create(getTestTaskName(containerName), TestTask)
+                TestTask testTask = project.tasks.create(getTestTaskName(containerName), TestTask)
                 testTask.configure(containerName)
+
+                JacocoTask jacocoTask = project.tasks.create("jacoco${TASK_STRING}-${containerName}", JacocoTask)
+                jacocoTask.configure(containerName, ext.jacocoClassDirectories)
+                jacocoTask.dependsOn(testTask)
             })
 
             project.task("build${TASK_STRING}", {
