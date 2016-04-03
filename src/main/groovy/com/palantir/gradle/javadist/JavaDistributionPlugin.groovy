@@ -23,14 +23,14 @@ import org.gradle.api.file.FileCollection
 class JavaDistributionPlugin implements Plugin<Project> {
 
     private static final String GROUP_NAME = "Docker Test Runners"
-    private static final String TASK_STRING = "docker-env"
+    private static final String TASK_STRING = "DockerEnv"
 
     static String getContainerRunName(Project project, String containerName) {
         return "${project.name}-${sanitize(containerName)}"
     }
 
     static String getTestTaskName(String containerName) {
-        return "test-${TASK_STRING}-${containerName}";
+        return "test${TASK_STRING}-${containerName}";
     }
 
     void apply(Project project) {
@@ -46,14 +46,14 @@ class JavaDistributionPlugin implements Plugin<Project> {
             List<Task> runDockerTasks = []
 
             dockerFiles.each({ containerName, dockerFile ->
-                def buildTask = project.tasks.create("build-${TASK_STRING}-${containerName}", BuildTask, {
+                def buildTask = project.tasks.create("build${TASK_STRING}-${containerName}", BuildTask, {
                     group = GROUP_NAME
                     description = "Build the Docker test environment container ${containerName}."
                 })
                 buildTask.configure(containerName, dockerFile)
                 buildDockerTasks << buildTask
 
-                def runTask = project.tasks.create("run-${TASK_STRING}-${containerName}", RunTask, {
+                def runTask = project.tasks.create("run${TASK_STRING}-${containerName}", RunTask, {
                     group = GROUP_NAME
                     description = "Run tests in the Docker test environment container ${containerName}."
                 })
@@ -61,16 +61,20 @@ class JavaDistributionPlugin implements Plugin<Project> {
                 runTask.dependsOn(buildTask)
                 runDockerTasks << runTask
 
+                def stopTask = project.tasks.create("stop${TASK_STRING}-${containerName}", StopTask)
+                stopTask.configure(containerName)
+                runTask.finalizedBy(stopTask)
+
                 def testTask = project.tasks.create(getTestTaskName(containerName), TestTask)
                 testTask.configure(containerName)
             })
 
-            project.task("build-${TASK_STRING}", {
+            project.task("build${TASK_STRING}", {
                 group = GROUP_NAME
                 description = "Build all of the Docker test environment containers."
             }).setDependsOn(buildDockerTasks)
 
-            project.task("test-${TASK_STRING}", {
+            project.task("test${TASK_STRING}", {
                 group = GROUP_NAME
                 description = "Run all of the Docker test environment containers."
             }).setDependsOn(runDockerTasks)

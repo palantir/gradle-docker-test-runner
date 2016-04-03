@@ -20,21 +20,18 @@ import org.gradle.api.tasks.testing.Test
 class TestTask extends Test {
 
     /**
-     * Configures the task to run all of the tests for the current project. The task is configured to output XML and
-     * HTML reports to directories that correspond to the "default" location concatenated with the sanitized container
-     * name.
+     * Configures the task to run all of the tests for the current project. Modifies the JUnit XML and HTML test report
+     * destinations of the default test configuration so that they are concatenated with the name of the container in
+     * which the tests are meant to be run. Runs all of the tests in the "test" source set of the current project using
+     * the "test" runtime classpath of the current project.
      */
     public void configure(String containerName) {
         testClassesDir = project.sourceSets.test.output.classesDir
         classpath = project.sourceSets.test.runtimeClasspath
 
         String sanitizedName = sanitize(containerName)
-
-        println("debug TestTask configure: junitXml destination is ${reports.junitXml.destination}")
-        println("debug TestTask configure: html destination is ${reports.html.destination}")
-
-        reports.junitXml.destination("${project.buildDir.absolutePath}/test-results-${sanitizedName}")
-        reports.html.destination("${project.buildDir.absolutePath}/reports/tests-${sanitizedName}")
+        reports.junitXml.destination("${reports.junitXml.getDestination().absolutePath}-${sanitizedName}")
+        reports.html.destination("${reports.html.getDestination().absolutePath}-${sanitizedName}")
 
         include("**/*")
     }
