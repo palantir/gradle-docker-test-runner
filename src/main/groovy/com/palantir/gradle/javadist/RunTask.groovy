@@ -21,9 +21,10 @@ import org.gradle.api.tasks.Exec
 class RunTask extends Exec {
 
     /**
-     * Configures the task to run the Docker environment tests for the current project. Executes the 'docker run'
-     * command. Loads the project root directory as 'workspace' in the Docker container and loads the Docker, Gradle
-     * and Maven cache directories from the user's home directory into the container as well.
+     * Configures the task to run the Docker environment and execute a Gradle task within it. Executes the 'docker run'
+     * command and executes './gradlew' for the specified task in the current project. Loads the project root directory
+     * as 'workspace' in the Docker container and loads the Docker, Gradle and Maven cache directories from the user's
+     * home directory into the container as well.
      */
     public void configure(String taskName, String containerName, Multimap<String, String> customArguments) {
         workingDir(project.rootDir)
@@ -46,7 +47,7 @@ class RunTask extends Exec {
         arguments << '-v' << "${homeDir}/.docker:/root/.docker"
         arguments << '-v' << "${homeDir}/.gradle:/root/.gradle"
         arguments << '-v' << "${homeDir}/.m2:/root/.m2"
-        arguments << '--name' << JavaDistributionPlugin.getContainerRunName(project, containerName)
+        arguments << '--name' << DockerTestRunnerPlugin.getContainerRunName(project, containerName)
         arguments << containerName
         arguments << '/bin/bash' << '-c'
         arguments << "./gradlew --stacktrace :${project.name}:${taskName}"

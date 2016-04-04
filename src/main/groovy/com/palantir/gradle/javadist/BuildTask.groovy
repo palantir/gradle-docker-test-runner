@@ -19,12 +19,17 @@ import org.gradle.api.tasks.Exec
 
 class BuildTask extends Exec {
 
-    public void configure(String containerName, File dockerFile) {
+    /**
+     * Configures the task to build the Docker image specified by the provided Dockerfile. The image is tagged with
+     * the provided name and is built in the directory in which the provided image file resides.
+     */
+    public void configure(File dockerFile, String imageName) {
         workingDir(project.rootDir)
 
-        commandLine('docker', 'build',
+        commandLine('docker',
+                'build',
                 '-f', dockerFile.absolutePath,
-                '-t', containerName,
+                '-t', imageName,
                 dockerFile.parentFile.absolutePath)
     }
 
