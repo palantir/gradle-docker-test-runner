@@ -1,0 +1,126 @@
+plugins {
+    id 'com.gradle.plugin-publish' version '0.9.2'
+    id 'com.jfrog.bintray' version '1.5'
+    id 'com.jfrog.artifactory' version '4.0.0'
+    id 'com.palantir.git-version' version '0.4.0'
+    id 'com.github.kt3k.coveralls' version '2.6.3'
+    id 'eclipse'
+    id 'groovy'
+    id 'idea'
+    id 'jacoco'
+    id 'maven-publish'
+}
+
+task createClasspathManifest {
+    def outputDir = file("$buildDir/$name")
+
+    inputs.files sourceSets.main.runtimeClasspath
+    outputs.dir outputDir
+
+    doLast {
+        outputDir.mkdirs()
+        file("$outputDir/plugin-classpath.txt").text = sourceSets.main.runtimeClasspath.join("\n")
+    }
+}
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    compile gradleApi()
+
+    testCompile gradleTestKit()
+    testCompile('org.spockframework:spock-core:1.0-groovy-2.4') {
+        exclude module: 'groovy-all'
+    }
+    testCompile files(createClasspathManifest)
+}
+
+if (System.env.CIRCLE_TEST_REPORTS) {
+    test.reports.junitXml.destination = new File(System.env.CIRCLE_TEST_REPORTS, getName())
+}
+
+group 'com.palantir.gradle.javadist'
+version gitVersion()
+sourceCompatibility = 1.7
+
+task sourceJar(type: Jar) {
+    from sourceSets.main.allSource
+    classifier 'sources'
+}
+
+publishing {
+    publications {
+        bintray(MavenPublication) {
+            from components.java
+            artifact(sourceJar)
+            artifact(publishPluginJavaDocsJar)
+        }
+        jfrog(MavenPublication) {
+            from components.java
+            artifact(sourceJar)
+            artifact(publishPluginJavaDocsJar)
+            // required pattern for OJO
+            version project.version.replaceAll(/-.*/, '-SNAPSHOT')
+        }
+    }
+}
+
+artifactory {
+    publish {
+        contextUrl = 'https://oss.jfrog.org/artifactory'
+        repository {
+            repoKey = (project.version =~ /-/ ? 'oss-snapshot-local' : 'oss-release-local')
+            username = System.env.BINTRAY_USER
+            password = System.env.BINTRAY_KEY
+            maven = true
+        }
+        defaults {
+            publications (publishing.publications.jfrog)
+            properties = ['git': project.version]
+        }
+    }
+}
+artifactoryPublish.dependsOn 'generatePomFileForJfrogPublication', 'sourceJar', 'build'
+
+bintray {
+    user = System.env.BINTRAY_USER
+    key = System.env.BINTRAY_KEY
+    pkg {
+        repo = 'releases'
+        name = 'gradle-java-distribution'
+        userOrg = 'palantir'
+        licenses = ['Apache-2.0']
+        publications = ['bintray']
+    }
+}
+bintrayUpload.dependsOn 'generatePomFileForBintrayPublication', 'sourceJar', 'build'
+
+bintrayUpload.onlyIf {
+    System.env.BINTRAY_USER && System.env.BINTRAY_KEY && project.version ==~ /\d+\.\d+\.\d+/
+}
+
+pluginBundle {
+    website = 'https://github.com/palantir/gradle-java-distribution'
+    vcsUrl = 'https://github.com/palantir/gradle-java-distribution'
+    description = 'Creates a distributable package containing libraries and scripts necessary to easily deploy and run a Java project.'
+    tags = ['distribution', 'application']
+
+    plugins {
+        distributionPlugin {
+            id = 'com.palantir.java-distribution'
+            displayName = 'Palantir Java Distribution'
+        }
+    }
+}
+
+publishPlugins.onlyIf {
+    project.version ==~ /\d+\.\d+\.\d+/
+}
+
+jacocoTestReport {
+    reports {
+        xml.enabled true
+    }
+}
