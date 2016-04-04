@@ -1,100 +1,116 @@
-Java Distribution Gradle Plugin
+Docker Test Runner Gradle Plugin
 ================================
-[![Build Status](https://circleci.com/gh/palantir/gradle-java-distribution.svg?style=shield)](https://circleci.com/gh/palantir/gradle-java-distribution)
-[![Coverage Status](https://coveralls.io/repos/github/palantir/gradle-java-distribution/badge.svg?branch=develop)](https://coveralls.io/github/palantir/gradle-java-distribution?branch=develop)
-[![Gradle Plugins Release](https://api.bintray.com/packages/palantir/releases/gradle-java-distribution/images/download.svg)](https://plugins.gradle.org/plugin/com.palantir.java-distribution)
+This plugin provides a simple way to test Gradle projects in multiple
+different environments specified in Dockerfiles as part of a build. Given a set
+of Dockerfiles that contain the desired environments, this plugin adds tasks
+for running the project's tests and coverage tasks in those containers. The
+test and coverage output for each environment is persisted separately, and
+it is possible to combine the coverage from the tests run in all of the
+environments using [gradle-jacoco-coverage](https://github.com/palantir/gradle-jacoco-coverage).
 
-Similar to the standard application plugin, this plugin facilitates packaging
-Gradle projects for easy distribution and execution. This distribution chooses
-different packaging conventions that attempt to split immutable files from
-mutable state and configuration.
+This plugin makes it trivial to test existing projects against multiple
+different environments in a lightweight manner. The ability to easily run tests
+in different environments locally makes the development process faster and
+allows environment verification to be part of the core build. It also allows
+code coverage to properly account for code that will only execute in certain
+environments.
 
-In particular, this plugin packages a project into a common deployment structure
-with a simple start script, daemonizing script, and, a manifest describing the
-content of the package. The package will follow this structure:
-
-    [service-name]-[service-version]/
-        deployment/
-            manifest.yml             # simple package manifest
-        service/
-            bin/
-                [service-name]       # start script
-                [service-name.bat]   # Windows start script
-                init.sh              # daemonizing script
-                config.sh            # customized environment vars
-            lib/
-                [jars]
-        var/
-            # application configuration and data
-
-Packages are produced as gzipped tar names `[service-name]-[project-version].tgz`.
+An example use case of this plugin is testing a project against multiple
+different versions or vendors of a JDK.
 
 Usage
 -----
 Apply the plugin using standard gradle convention:
 
     plugins {
-        id 'com.palantir.java-distribution'
+        id 'com.palantir.docker-test-runner'
     }
 
-Set the service name, main class, and optionally the arguments to pass to the
-program for a default run configuration:
+Because this plugin adds test and coverage tasks, it requires the 'java' and 'jacoco' plugins to already be applied.
 
-    distribution {
-        serviceName 'my-service'
-        mainClass 'com.palantir.foo.bar.MyServiceMainClass'
-        args 'server', 'var/conf/my-service.yml'
+Configure the 'dockerFiles' property of the dockerTestRunner configuration
+object to be a FileCollection of the DockerFiles that should be used as the
+test environments:
+
+    dockerTestRunner {
+        dockerFiles = fileTree(project.rootDir) {
+            include '**/Dockerfile'
+        }
     }
 
-The `distribution` block offers the following options:
+The `dockerTestRunner` block offers the following options:
 
- * `serviceName` the name of this service, used to construct the final artifact's file name.
- * `mainClass` class containing the entry point to start the program.
- * (optional) `args` a list of arguments to supply when running `start`.
- * (optional) `defaultJvmOpts` a list of default JVM options to set on the program.
- * (optional) `enableManifestClasspath` a boolean flag; if set to true, then the explicit Java
-   classpath is omitted from the generated Windows start script and instead infered
-   from a JAR file whose MANIFEST contains the classpath entries.
- * (optional) `javaHome` a fixed override for the `JAVA_HOME` environment variable that will
-   be applied when `init.sh` is run.
-
-
-Packaging
----------
-To create a compressed, gzipped tar file, run the `distTar` task.
-
-As part of package creation, this plugin will create three shell scripts:
-
- * `service/bin/[service-name]`: a Gradle default start script for running
-   the defined `mainClass`
- * `service/bin/init.sh`: a shell script to assist with daemonizing a JVM
-   process. The script takes a single argument of `start`, `stop`, `console` or `status`.
-   - `start`: On calls to `service/bin/init.sh start`,
-     `service/bin/[serviceName] [args]` will be executed, disowned, and a pid file
-     recorded in `var/run/[service-name].pid`.
-   - `console`: like `start`, but does not background the process.
-   - `status`: returns 0 when `var/run/[service-name].pid` exists and a
-     process the id recorded in that file with a command matching the expected
-     start command is found in the process table.
-   - `stop`: if the process status is 0, issues a kill signal to the process.
- * `service/bin/config.sh`: a shell script containing environment variables to apply
-    as overrides when `init.sh` is run.
-
-
-In addition to creating these scripts, this plugin will merge the entire
-contents of `${projectDir}/service` and `${projectDir}/var` into the package.
-
-Running with Gradle
--------------------
-To run the main class using Gradle, run the `run` task.
+ * `dockerFiles` the Dockerfiles to use as test environments.
+ * (optional) `jacocoClassDirectories` is an optional closure that can be
+  provided to control the output of the Jacoco reports. The closure is
+  provided with a `FileCollection` that contains all of the classes that will
+  be used for coverage and must return the classes that should be considered
+  for coverage. This can be useful if there are certain classes that should
+  be excluded for coverage purposes.
+ * (optional) `customDockerRunArgs` is a [`Multimap`](http://docs.guava-libraries.googlecode.com/git/javadoc/com/google/common/collect/Multimap.html)
+   that can be provided with custom arguments that should be provided to the
+   Docker `run` commmand that is executed by the task. The keys are the flags
+   and the values are the values for the flag.
 
 Tasks
 -----
- * `distTar`: creates the gzipped tar package
- * `createStartScripts`: generates standard Java start scripts
- * `createInitScript`: generates daemonizing init.sh script
- * `createManifest`: generates a simple yaml file describing the package content
- * `run`: runs the specified `mainClass` with default `args`
+Each environment has an identifier that is derived from the parent directory
+and name of its Dockerfile. For example, if
+'environments/oraclejdk-7/dockerfile' and 'environments/openjdk-8/dockerfile' were specified as Dockerfiles, their environment identifiers would be
+'oraclejdk-7/dockerfile' and 'openjdk-8/dockerfile', respectively. The
+identifiers must be unique (the plugin will throw an exception if a set of
+Dockerfiles that would result in identifier collisions are specified).
+
+Each environment has its own task group that contains 3 tasks:
+* `buildDockerTestRunner-{identifier}`
+* `runJacocoTestReportDockerTestRunner-{identifier}`
+* `runTestDockerTestRunner-{identifier}`
+
+If there is at least one environment, then the following bulk tasks that run
+the tasks for all of the environments are added:
+* `buildDockerTestRunner`
+* `jacocoTestReportDockerTestRunner`
+* `testDockerTestRunner`
+
+Build
+-----
+The build tasks run `docker build` to create the images for the environments.
+The build tasks are invoked automatically as needed, but can be called directly
+to build the images for caching purposes.
+
+Test
+----
+The test tasks use `docker run` to run a Docker container of the image for the
+specified environment and then runs a Gradle test task within that container.
+The test task that is run within the container tests all of the classes in the
+project's Gradle test output classes directory using the test runtime path.
+
+The destination for the XML and HTML reports will be the same destination used
+by the standard Gradle test task with the identifier appended to it. For
+example, if the regular test tasks writes its output to 'build/reports/tests',
+then this test task will write its output to
+'build/reports/tests-{identifier}'.
+
+The raw Jacoco execution output is written to
+"${project.getBuildDir()}/jacoco/${identifier}.exec".
+
+Jacoco Test Report
+------------------
+The Jacoco test report tasks are the same as the test tasks but generate a
+coverage report. The output location of the coverage reports is the same
+location used by the standard Gradle Jacoco reports task, but the name of
+the directory within the reports directory will be the environment identifier.
+
+Combining Coverage
+------------------
+The coverage outputs of multiple different test environments can be combined
+using [gradle-jacoco-coverage](https://github.com/palantir/gradle-jacoco-coverage)
+without any further modifications. Running that plugin's `jacocoFullReport`
+task will create a report that includes the coverage outputs of the tests
+run in the Docker environments.
+
+In addition to creating these scripts, this plugin will merge the entire
+contents of `${projectDir}/service` and `${projectDir}/var` into the package.
 
 License
 -------
