@@ -16,12 +16,16 @@
  */
 package com.palantir.gradle.dockertestrunner
 
+import org.apache.commons.io.FileUtils
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
+
+import java.nio.file.Paths
+import java.nio.file.attribute.PosixFilePermissions
 
 class DockerTestRunnerPluginTests extends Specification {
 
@@ -46,6 +50,39 @@ class DockerTestRunnerPluginTests extends Specification {
                 .collect { new File(it) }
     }
 
+    /**
+     * Copies the Gradle resources needed to run Gradle within Docker for the tests. When the unit tests run, a
+     * temporary directory with the simple test Gradle project is created. When the Docker-based tasks are run,
+     * the container mounts that directory and runs './gradlew' within it, so it is necessary to ensure that minimum
+     * resources needed to run Docker within that container with this plugin being tested is present.
+     */
+    private void setupDockerGradleResources() {
+        // copy gradle wrapper and set run permissions
+        FileUtils.copyFile(Paths.get('gradlew').toFile(), temporaryFolder.newFile('gradlew'))
+        java.nio.file.Files.setPosixFilePermissions(
+                temporaryFolder.getRoot().toPath().resolve('gradlew'),
+                PosixFilePermissions.fromString('rwxr-xr-x'))
+
+        // copy gradle directory
+        FileUtils.copyDirectory(Paths.get('gradle').toFile(), temporaryFolder.newFolder('gradle'))
+
+        // plugin needs to be available to the Gradle that runs within Docker. Copy the source files
+        // to 'buildSrc' to ensure that the plugin that runs within the Docker container is the same
+        // as the one being tested by these tests.
+        FileUtils.copyDirectory(Paths.get('src', 'main').toFile(), temporaryFolder.newFolder('buildSrc', 'src', 'main'))
+        File buildSrcBuildGradle = temporaryFolder.root.toPath().resolve('buildSrc/build.gradle').toFile();
+        buildSrcBuildGradle.createNewFile();
+        buildSrcBuildGradle << '''
+            repositories {
+                mavenCentral()
+            }
+
+            dependencies {
+                compile 'com.google.guava:guava-jdk5:17.0'
+            }
+        '''
+    }
+
     private GradleRunner run(String... tasks) {
         GradleRunner.create()
                 .withPluginClasspath(pluginClasspath)
@@ -59,7 +96,7 @@ class DockerTestRunnerPluginTests extends Specification {
         buildFile << '''
             plugins {
                 id 'java'
-                id 'com.palantir.docker-test-runner\'
+                id 'com.palantir.docker-test-runner'
             }
         '''.stripIndent()
 
@@ -73,321 +110,229 @@ class DockerTestRunnerPluginTests extends Specification {
         buildResult.output !=~ ('testDockerTestRunner')
     }
 
-//    def 'produce distribution bundle and check start, stop and restart behavior' () {
-//        given:
-//        createUntarBuildFile(buildFile)
-//
-//        temporaryFolder.newFolder('src', 'main', 'java', 'test')
-//        temporaryFolder.newFile('src/main/java/test/Test.java') << '''
-//        package test;
-//        public class Test {
-//            public static void main(String[] args) throws InterruptedException {
-//                System.out.println("Test started");
-//                while(true);
-//            }
-//        }
-//        '''.stripIndent()
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        // check content was extracted
-//        new File(projectDir, 'dist/service-name-0.1').exists()
-//
-//        // try all of the service commands
-//        String output = exec('dist/service-name-0.1/service/bin/init.sh', 'start')
-//        output ==~ /(?m)Running 'service-name'\.\.\.\s+Started \(\d+\)\n/
-//        readFully('dist/service-name-0.1/var/log/service-name-startup.log').equals('Test started\n')
-//        exec('dist/service-name-0.1/service/bin/init.sh', 'status') ==~ /(?m)Checking 'service-name'\.\.\.\s+Running \(\d+\)\n/
-//        exec('dist/service-name-0.1/service/bin/init.sh', 'restart') ==~
-//            /(?m)Stopping 'service-name'\.\.\.\s+Stopped \(\d+\)\nRunning 'service-name'\.\.\.\s+Started \(\d+\)\n/
-//        exec('dist/service-name-0.1/service/bin/init.sh', 'stop') ==~ /(?m)Stopping 'service-name'\.\.\.\s+Stopped \(\d+\)\n/
-//
-//        // check manifest was created
-//        new File(projectDir, 'build/deployment/manifest.yml').exists()
-//        String manifest = readFully('dist/service-name-0.1/deployment/manifest.yml')
-//        manifest.contains('productName: service-name\n')
-//        manifest.contains('productVersion: 0.1\n')
-//    }
-//
-//    def 'produce distribution bundle and check var/log and var/run are excluded' () {
-//        given:
-//        createUntarBuildFile(buildFile)
-//
-//        temporaryFolder.newFolder('var', 'log')
-//        temporaryFolder.newFile('var/log/service-name.log')
-//        temporaryFolder.newFolder('var', 'run')
-//        temporaryFolder.newFile('var/run/service-name.pid')
-//        temporaryFolder.newFolder('var', 'conf')
-//        temporaryFolder.newFile('var/conf/service-name.yml')
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        // check content was extracted
-//        new File(projectDir, 'dist/service-name-0.1').exists()
-//        !new File(projectDir, 'dist/service-name-0.1/var/log').exists()
-//        !new File(projectDir, 'dist/service-name-0.1/var/run').exists()
-//        new File(projectDir, 'dist/service-name-0.1/var/conf/service-name.yml').exists()
-//    }
-//
-//    def 'produce distribution bundle with a non-string version object' () {
-//        given:
-//        buildFile << '''
-//            plugins {
-//                id 'com.palantir.java-distribution'
-//                id 'java'
-//            }
-//
-//            class MyVersion {
-//                String version
-//
-//                MyVersion(String version) {
-//                    this.version = version
-//                }
-//
-//                String toString() {
-//                    return this.version
-//                }
-//            }
-//
-//            version new MyVersion('0.1')
-//
-//            distribution {
-//                serviceName 'service-name'
-//                mainClass 'test.Test'
-//            }
-//
-//            sourceCompatibility = '1.7'
-//
-//            // most convenient way to untar the dist is to use gradle
-//            task untar (type: Copy) {
-//                from tarTree(resources.gzip("${buildDir}/distributions/service-name-0.1.tgz"))
-//                into "${projectDir}/dist"
-//                dependsOn distTar
-//            }
-//        '''.stripIndent()
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        // check content was extracted
-//        new File(projectDir, 'dist/service-name-0.1').exists()
-//
-//        // check manifest was created
-//        new File(projectDir, 'build/deployment/manifest.yml').exists()
-//        String manifest = readFully('dist/service-name-0.1/deployment/manifest.yml')
-//        manifest.contains('productName: service-name\n')
-//        manifest.contains('productVersion: 0.1\n')
-//    }
-//
-//    def 'produce distribution bundle with files in deployment/' () {
-//        given:
-//        createUntarBuildFile(buildFile)
-//
-//        String deploymentConfiguration = 'log: service-name.log'
-//        temporaryFolder.newFolder('deployment')
-//        temporaryFolder.newFile('deployment/manifest.yml') << 'invalid manifest'
-//        temporaryFolder.newFile('deployment/configuration.yml') << deploymentConfiguration
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        new File(projectDir, 'dist/service-name-0.1').exists()
-//
-//        // clobbers deployment/manifest.yml
-//        new File(projectDir, 'dist/service-name-0.1/deployment/manifest.yml').exists()
-//        String manifest = readFully('dist/service-name-0.1/deployment/manifest.yml')
-//        manifest.contains('productName: service-name\n')
-//        manifest.contains('productVersion: 0.1\n')
-//
-//        // check files in deployment/ copied successfully
-//        new File(projectDir, 'dist/service-name-0.1/deployment/configuration.yml').exists()
-//        String configuration = readFully('dist/service-name-0.1/deployment/configuration.yml')
-//        configuration.equals(deploymentConfiguration)
-//    }
-//
-//    def 'produce distribution bundle with start script that passes default JVM options' () {
-//        given:
-//        createUntarBuildFile(buildFile)
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        new File(projectDir, 'dist/service-name-0.1').exists()
-//
-//        // check start script uses default JVM options
-//        new File(projectDir, 'dist/service-name-0.1/service/bin/service-name').exists()
-//        String startScript = readFully('dist/service-name-0.1/service/bin/service-name')
-//        startScript.contains('DEFAULT_JVM_OPTS=\'"-Xmx4M" "-Djavax.net.ssl.trustStore=truststore.jks"\'')
-//    }
-//
-//    def 'produce distribution bundle that populates config.sh' () {
-//        given:
-//        createUntarBuildFile(buildFile)
-//        buildFile << '''
-//            distribution {
-//                javaHome 'foo'
-//            }
-//        '''.stripIndent()
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        new File(projectDir, 'dist/service-name-0.1').exists()
-//
-//        // check start script uses default JVM options
-//        new File(projectDir, 'dist/service-name-0.1/service/bin/config.sh').exists()
-//        String startScript = readFully('dist/service-name-0.1/service/bin/config.sh')
-//        startScript.contains('JAVA_HOME="foo"')
-//    }
-//
-//    def 'produces manifest-classpath jar and windows start script with no classpath length limitations' () {
-//        given:
-//        createUntarBuildFile(buildFile)
-//        buildFile << '''
-//            distribution {
-//                enableManifestClasspath true
-//            }
-//        '''.stripIndent()
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        new File(projectDir, 'dist/service-name-0.1/service/bin/service-name.bat').exists()
-//        String startScript = readFully('dist/service-name-0.1/service/bin/service-name.bat')
-//        startScript.contains("-manifest-classpath-0.1.jar")
-//        !startScript.contains("-classpath \"%CLASSPATH%\"")
-//        new File(projectDir, 'dist/service-name-0.1/service/lib/').listFiles()
-//            .find({it.name.endsWith("-manifest-classpath-0.1.jar")})
-//    }
-//
-//    def 'does not produce manifest-classpath jar when disabled in extension'() {
-//        given:
-//        createUntarBuildFile(buildFile)
-//
-//        when:
-//        BuildResult buildResult = run('build', 'distTar', 'untar').build()
-//
-//        then:
-//        buildResult.task(':build').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':distTar').outcome == TaskOutcome.SUCCESS
-//        buildResult.task(':untar').outcome == TaskOutcome.SUCCESS
-//
-//        new File(projectDir, 'dist/service-name-0.1/service/bin/service-name.bat').exists()
-//        String startScript = readFully('dist/service-name-0.1/service/bin/service-name.bat')
-//        !startScript.contains("-manifest-classpath-0.1.jar")
-//        startScript.contains("-classpath \"%CLASSPATH%\"")
-//        !new File(projectDir, 'dist/service-name-0.1/service/lib/').listFiles()
-//            .find({it.name.endsWith("-manifest-classpath-0.1.jar")})
-//    }
-//
-//    def 'distTar artifact name is set during appropriate lifecycle events'() {
-//        given:
-//        buildFile << '''
-//            plugins {
-//                id 'com.palantir.java-distribution'
-//                id 'java'
-//            }
-//            distribution {
-//                serviceName "my-service"
-//                mainClass "dummy.service.MainClass"
-//                args "hello"
-//            }
-//
-//            println "before: distTar: ${distTar.outputs.files.singleFile}"
-//
-//            afterEvaluate {
-//                println "after: distTar: ${distTar.outputs.files.singleFile}"
-//            }
-//        '''.stripIndent()
-//
-//        when:
-//        BuildResult buildResult = run('tasks').build()
-//
-//        then:
-//        buildResult.task(':tasks').outcome == TaskOutcome.SUCCESS
-//        buildResult.output =~ ('before: distTar: [A-Za-z0-9/-_]*/my-service.tgz')
-//        buildResult.output =~ ('after: distTar: [A-Za-z0-9/-_]*/my-service.tgz')
-//
-//    }
-//
-//    private def createUntarBuildFile(buildFile) {
-//        buildFile << '''
-//            plugins {
-//                id 'com.palantir.java-distribution'
-//                id 'java'
-//            }
-//
-//            version '0.1'
-//
-//            distribution {
-//                serviceName 'service-name'
-//                mainClass 'test.Test'
-//                defaultJvmOpts '-Xmx4M', '-Djavax.net.ssl.trustStore=truststore.jks'
-//            }
-//
-//            sourceCompatibility = '1.7'
-//
-//            // most convenient way to untar the dist is to use gradle
-//            task untar (type: Copy) {
-//                from tarTree(resources.gzip("${buildDir}/distributions/service-name-0.1.tgz"))
-//                into "${projectDir}/dist"
-//                dependsOn distTar
-//            }
-//        '''.stripIndent()
-//    }
-//
-//    private String readFully(String file) {
-//        return new String(Files.readAllBytes(projectDir.toPath().resolve(file)))
-//    }
-//
+    def 'verify that tasks present with Dockerfiles'() {
+        given:
+        String openJdk7 = 'open-jdk-7'
+        File openJdk7Dir = temporaryFolder.newFolder(openJdk7)
+        openJdk7Dir.toPath().resolve("Dockerfile").toFile().createNewFile()
 
-//
-//    private String exec(String... tasks) {
-//        StringBuffer sout = new StringBuffer(), serr = new StringBuffer()
-//        Process proc = new ProcessBuilder().command(tasks).directory(projectDir).start()
-//        proc.consumeProcessOutput(sout, serr)
-//        proc.waitFor()
-//        sleep 1000 // wait for the Java process to actually run
-//        return sout.toString()
-//    }
+        String oracleJdk8 = 'oracle-jdk-8'
+        File oracleJdk8Dir = temporaryFolder.newFolder(oracleJdk8)
+        oracleJdk8Dir.toPath().resolve("Dockerfile").toFile().createNewFile();
 
+        buildFile << '''
+            plugins {
+                id 'java'
+                id 'jacoco'
+                id 'com.palantir.docker-test-runner'
+            }
 
+            dockerTestRunner {
+                dockerFiles = fileTree(project.rootDir) {
+                    include '**/Dockerfile'
+                }
+            }
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('tasks').build()
+
+        then:
+        buildResult.task(':tasks').outcome == TaskOutcome.SUCCESS
+
+        // verify per Dockerfile tasks exist
+        [ openJdk7, oracleJdk8 ].each {
+            buildResult.output =~ ("Docker Test Runner: ${it}/dockerfile tasks")
+            buildResult.output =~ ("buildDockerTestRunner-${it}/dockerfile")
+            buildResult.output =~ ("runJacocoTestReportDockerTestRunner-${it}/dockerfile")
+            buildResult.output =~ ("runTestDockerTestRunner-${it}/dockerfile")
+        }
+
+        // verify combined tasks exist
+        buildResult.output =~ ('buildDockerTestRunner')
+        buildResult.output =~ ('jacocoTestReportDockerTestRunner')
+        buildResult.output =~ ('testDockerTestRunner')
+    }
+
+    def 'verify buildDockerTestRunner builds Docker image'() {
+        given:
+        String openJdk8 = 'openjdk-8'
+        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
+        File dockerFile = openJdk8Dir.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile();
+
+        dockerFile << '''
+            FROM nimmis/java-centos:openjdk-8-jdk
+            ENV JAVA_HOME=/usr/lib/jvm/java
+        '''.stripIndent()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+                id 'jacoco'
+                id 'com.palantir.docker-test-runner'
+            }
+
+            dockerTestRunner {
+                dockerFiles = fileTree(project.rootDir) {
+                    include '**/Dockerfile'
+                }
+            }
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('buildDockerTestRunner').build()
+
+        then:
+        buildResult.task(':buildDockerTestRunner').outcome == TaskOutcome.SUCCESS
+        buildResult.output =~ ('FROM nimmis/java-centos:openjdk-8-jdk')
+        buildResult.output =~ ('Successfully built')
+    }
+
+    def 'verify testDockerTestRunner runs in Docker container in root project'() {
+        given:
+        setupDockerGradleResources();
+
+        String openJdk8 = 'openjdk-8'
+        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
+        File dockerFile = openJdk8Dir.toPath().resolve('Dockerfile').toFile()
+        dockerFile.createNewFile();
+        dockerFile << '''
+            FROM nimmis/java-centos:openjdk-8-jdk
+            ENV JAVA_HOME=/usr/lib/jvm/java
+        '''.stripIndent()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+                id 'jacoco'
+            }
+
+            apply plugin: 'com.palantir.docker-test-runner'
+
+            dockerTestRunner {
+                dockerFiles = fileTree(project.rootDir) {
+                    include '**/Dockerfile'
+                }
+            }
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('testDockerTestRunner').build()
+
+        then:
+        buildResult.task(':testDockerTestRunner').outcome == TaskOutcome.SUCCESS
+        buildResult.output =~ (':testDockerTestRunner-openjdk-8/dockerfile UP-TO-DATE')
+    }
+
+    def 'verify testDockerTestRunner runs in Docker container in subproject'() {
+        given:
+        setupDockerGradleResources();
+
+        String openJdk8 = 'openjdk-8'
+        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
+        File dockerFile = openJdk8Dir.toPath().resolve('Dockerfile').toFile()
+        dockerFile.createNewFile();
+        dockerFile << '''
+            FROM nimmis/java-centos:openjdk-8-jdk
+            ENV JAVA_HOME=/usr/lib/jvm/java
+        '''.stripIndent()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+                id 'jacoco'
+            }
+
+            subprojects {
+                apply plugin: 'java'
+                apply plugin: 'jacoco'
+                apply plugin: 'com.palantir.docker-test-runner'
+
+                dockerTestRunner {
+                    dockerFiles = fileTree(project.rootDir) {
+                        include '**/Dockerfile'
+                    }
+                }
+            }
+        '''.stripIndent()
+
+        // create subproject
+        temporaryFolder.newFolder('test-subproject')
+        File settings = temporaryFolder.newFile('settings.gradle')
+        settings << '''
+            include 'test-subproject'
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('testDockerTestRunner').build()
+
+        then:
+        buildResult.task(':test-subproject:testDockerTestRunner').outcome == TaskOutcome.SUCCESS
+        buildResult.output =~ (':test-subproject:testDockerTestRunner-openjdk-8/dockerfile UP-TO-DATE')
+    }
+
+    def 'verify testDockerTestRunner runs tests in Docker container'() {
+        given:
+        setupDockerGradleResources();
+
+        String openJdk8 = 'openjdk-8'
+        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
+        File dockerFile = openJdk8Dir.toPath().resolve('Dockerfile').toFile()
+        dockerFile.createNewFile();
+        dockerFile << '''
+            FROM nimmis/java-centos:openjdk-8-jdk
+            ENV JAVA_HOME=/usr/lib/jvm/java
+            ENV FOO=bar
+        '''.stripIndent()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+                id 'jacoco'
+            }
+
+            apply plugin: 'java'
+            apply plugin: 'com.palantir.docker-test-runner'
+
+            dockerTestRunner {
+                dockerFiles = fileTree(project.rootDir) {
+                    include '**/Dockerfile'
+                }
+            }
+
+            repositories {
+                mavenCentral()
+            }
+
+            dependencies {
+                compile 'junit:junit:4.12'
+            }
+        '''.stripIndent()
+
+        // create test file that will run in container. The test asserts the presence of an environment variable that
+        // is set in the container file.
+        temporaryFolder.newFolder('src', 'test', 'java', 'foo')
+        temporaryFolder.newFile('src/test/java/foo/FooTest.java') << '''
+        package foo;
+        import org.junit.Assert;
+        import org.junit.Test;
+        public class FooTest {
+            @Test
+            public void fooTest() {
+                String foo = System.getenv("FOO");
+                Assert.assertEquals("bar", foo);
+            }
+        }
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('testDockerTestRunner').build()
+
+        then:
+        println buildResult.output
+        buildResult.task(':testDockerTestRunner').outcome == TaskOutcome.SUCCESS
+        buildResult.output =~ (':testClasses')
+    }
 
 }

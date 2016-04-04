@@ -88,7 +88,6 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                 jacocoReportTask.dependsOn(testTask)
             })
 
-            println("dockerFiles.isEmpty(): ${dockerFiles.isEmpty()}")
             if (!dockerFiles.isEmpty()) {
                 // add tasks that will perform the individual tasks for all Dockerfiles
                 String allGroupName = getGroupName("All")

@@ -50,7 +50,7 @@ class RunTask extends Exec {
         arguments << '--name' << DockerTestRunnerPlugin.getContainerRunName(project, containerName)
         arguments << containerName
         arguments << '/bin/bash' << '-c'
-        arguments << "./gradlew --stacktrace :${project.name}:${taskName}"
+        arguments << "./gradlew --stacktrace ${project.path}:${taskName}"
 
         commandLine(arguments)
     }
