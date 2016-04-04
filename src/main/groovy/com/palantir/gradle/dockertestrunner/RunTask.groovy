@@ -16,6 +16,7 @@
 package com.palantir.gradle.dockertestrunner
 
 import com.google.common.collect.Multimap
+import org.gradle.api.invocation.Gradle
 import org.gradle.api.tasks.Exec
 
 class RunTask extends Exec {
@@ -24,9 +25,16 @@ class RunTask extends Exec {
      * Configures the task to run the Docker environment and execute a Gradle task within it. Executes the 'docker run'
      * command and executes './gradlew' for the specified task in the current project. Loads the project root directory
      * as 'workspace' in the Docker container and loads the Docker, Gradle and Maven cache directories from the user's
-     * home directory into the container as well.
+     * home directory into the container as well. If 'copyGradleCache' is true, then the Gradle cache from the host
+     * is copied into the container instead of being mounted and shared directly. Although the task will generally be
+     * faster if the Gradle cache is not copied, in environments with high parallelism it is possible for Gradle
+     * operations to lock if the same cache directory is shared across different concurrent Gradle builds, in which case
+     * copying the directory can solve the issue.
      */
-    public void configure(String taskName, String containerName, Multimap<String, String> customArguments) {
+    public void configure(String taskName,
+                          String containerName,
+                          Multimap<String, String> customArguments,
+                          GradleCacheMode gradleCacheMode) {
         workingDir(project.rootDir)
 
         String homeDir = System.getProperty('user.home')
@@ -45,12 +53,32 @@ class RunTask extends Exec {
         arguments << '-w' << '/workspace'
         arguments << '-v' << "${project.rootDir.absolutePath}:/workspace"
         arguments << '-v' << "${homeDir}/.docker:/root/.docker"
-        arguments << '-v' << "${homeDir}/.gradle:/root/.gradle"
+
+        String gradleHome = project.getGradle().getGradleUserHomeDir().absolutePath;
+        switch (gradleCacheMode) {
+            case GradleCacheMode.MOUNT:
+                arguments << '-v' << "${gradleHome}:/root/.gradle"
+                break
+            case GradleCacheMode.COPY:
+                arguments << '-v' << "${gradleHome}:/root/host-gradle"
+                break
+            case GradleCacheMode.NONE:
+                break
+            default:
+                throw new IllegalStateException("Unrecognized gradle cache mode: ${gradleCacheMode}")
+        }
+
         arguments << '-v' << "${homeDir}/.m2:/root/.m2"
         arguments << '--name' << DockerTestRunnerPlugin.getContainerRunName(project, containerName)
         arguments << containerName
+
         arguments << '/bin/bash' << '-c'
-        arguments << "./gradlew --stacktrace ${project.path}:${taskName}"
+        String command = ''
+        if (gradleCacheMode == GradleCacheMode.COPY) {
+            command = 'cp -r /root/host-gradle /root/.gradle && '
+        }
+        command += "./gradlew --stacktrace ${project.path}:${taskName}"
+        arguments << command
 
         commandLine(arguments)
     }

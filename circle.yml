@@ -1,8 +1,14 @@
 machine:
+  services:
+    - docker
   java:
     version: oraclejdk7
   environment:
     TERM: dumb
+
+dependencies:
+  override:
+    - docker pull nimmis/java-centos:openjdk-8-jdk
 
 general:
   artifacts:

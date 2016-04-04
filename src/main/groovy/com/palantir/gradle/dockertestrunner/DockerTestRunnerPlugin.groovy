@@ -58,13 +58,13 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                 buildDockerTasks << buildTask
 
                 // task that runs the tests for this project in the container
-                RunTask runTask = project.tasks.create("runTest${TASK_STRING}-${containerName}", RunTask, {
+                RunTask runTestTask = project.tasks.create("runTest${TASK_STRING}-${containerName}", RunTask, {
                     group = currGroupName
                     description = "Run tests in the Docker test environment container ${containerName}."
                 })
-                runTask.configure(getTestTaskName(containerName), containerName, ext.customDockerRunArgs)
-                runTask.dependsOn(buildTask)
-                testDockerTasks << runTask
+                runTestTask.configure(getTestTaskName(containerName), containerName, ext.customDockerRunArgs, ext.gradleCacheMode)
+                runTestTask.dependsOn(buildTask)
+                testDockerTasks << runTestTask
 
                 // task that creates the Jacoco coverage report for this project in the container (will run the tests
                 // in the container if needed).
@@ -72,7 +72,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                     group = currGroupName
                     description = "Generate Jacoco coverage report in the Docker test environment container ${containerName}."
                 })
-                runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, ext.customDockerRunArgs)
+                runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, ext.customDockerRunArgs, ext.gradleCacheMode)
                 runJacocoReportTask.dependsOn(buildTask)
                 jacocoDockerTasks << runJacocoReportTask
 

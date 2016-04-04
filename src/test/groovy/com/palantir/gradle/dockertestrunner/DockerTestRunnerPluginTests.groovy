@@ -214,6 +214,7 @@ class DockerTestRunnerPluginTests extends Specification {
                 dockerFiles = fileTree(project.rootDir) {
                     include '**/Dockerfile'
                 }
+                gradleCacheMode = 'NONE'
             }
         '''.stripIndent()
 
@@ -253,6 +254,7 @@ class DockerTestRunnerPluginTests extends Specification {
                     dockerFiles = fileTree(project.rootDir) {
                         include '**/Dockerfile'
                     }
+                    gradleCacheMode = 'NONE'
                 }
             }
         '''.stripIndent()
@@ -299,6 +301,7 @@ class DockerTestRunnerPluginTests extends Specification {
                 dockerFiles = fileTree(project.rootDir) {
                     include '**/Dockerfile'
                 }
+                gradleCacheMode = 'NONE'
             }
 
             repositories {
