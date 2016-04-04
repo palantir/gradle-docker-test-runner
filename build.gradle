@@ -41,7 +41,7 @@ if (System.env.CIRCLE_TEST_REPORTS) {
     test.reports.junitXml.destination = new File(System.env.CIRCLE_TEST_REPORTS, getName())
 }
 
-group 'com.palantir.gradle.javadist'
+group 'com.palantir.gradle.dockertestrunner'
 version gitVersion()
 sourceCompatibility = 1.7
 
@@ -89,7 +89,7 @@ bintray {
     key = System.env.BINTRAY_KEY
     pkg {
         repo = 'releases'
-        name = 'gradle-java-distribution'
+        name = 'gradle-docker-test-runner'
         userOrg = 'palantir'
         licenses = ['Apache-2.0']
         publications = ['bintray']
@@ -102,15 +102,14 @@ bintrayUpload.onlyIf {
 }
 
 pluginBundle {
-    website = 'https://github.com/palantir/gradle-java-distribution'
-    vcsUrl = 'https://github.com/palantir/gradle-java-distribution'
-    description = 'Creates a distributable package containing libraries and scripts necessary to easily deploy and run a Java project.'
-    tags = ['distribution', 'application']
+    website = 'https://github.com/palantir/gradle-docker-test-runner'
+    vcsUrl = 'https://github.com/palantir/gradle-docker-test-runner'
+    description = 'Adds tasks to run unit tests and generates coverage reports in Docker containers'
 
     plugins {
-        distributionPlugin {
-            id = 'com.palantir.java-distribution'
-            displayName = 'Palantir Java Distribution'
+        dockerTestRunnerPlugin {
+            id = 'com.palantir.docker-test-runner'
+            displayName = 'Docker Test Runner'
         }
     }
 }

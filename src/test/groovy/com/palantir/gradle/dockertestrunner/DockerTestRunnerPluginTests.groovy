@@ -14,27 +14,65 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.palantir.gradle.javadist
-
-import java.nio.file.Files
+package com.palantir.gradle.dockertestrunner
 
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
-
 import spock.lang.Specification
 
-class JavaDistributionPluginTests extends Specification {
+class DockerTestRunnerPluginTests extends Specification {
 
-//    @Rule
-//    TemporaryFolder temporaryFolder = new TemporaryFolder()
-//
-//    File projectDir
-//    File buildFile
-//    List<File> pluginClasspath
-//
+    @Rule
+    TemporaryFolder temporaryFolder = new TemporaryFolder()
+
+    File projectDir
+    File buildFile
+    List<File> pluginClasspath
+
+    def setup() {
+        projectDir = temporaryFolder.root
+        buildFile = temporaryFolder.newFile('build.gradle')
+
+        def pluginClasspathResource = getClass().classLoader.findResource("plugin-classpath.txt")
+        if (pluginClasspathResource == null) {
+            throw new IllegalStateException("Did not find plugin classpath resource, run `testClasses` build task.")
+        }
+
+        pluginClasspath = pluginClasspathResource.readLines()
+                .collect { it.replace('\\', '\\\\') } // escape backslashes in Windows paths
+                .collect { new File(it) }
+    }
+
+    private GradleRunner run(String... tasks) {
+        GradleRunner.create()
+                .withPluginClasspath(pluginClasspath)
+                .withProjectDir(projectDir)
+                .withArguments(tasks)
+                .withDebug(true)
+    }
+
+    def 'verify that tasks not present without Dockerfile'() {
+        given:
+        buildFile << '''
+            plugins {
+                id 'java'
+                id 'com.palantir.docker-test-runner\'
+            }
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('tasks').build()
+
+        then:
+        buildResult.task(':tasks').outcome == TaskOutcome.SUCCESS
+        buildResult.output !=~ ('buildDockerTestRunner')
+        buildResult.output !=~ ('jacocoTestReportDockerTestRunner')
+        buildResult.output !=~ ('testDockerTestRunner')
+    }
+
 //    def 'produce distribution bundle and check start, stop and restart behavior' () {
 //        given:
 //        createUntarBuildFile(buildFile)
@@ -339,13 +377,7 @@ class JavaDistributionPluginTests extends Specification {
 //        return new String(Files.readAllBytes(projectDir.toPath().resolve(file)))
 //    }
 //
-//    private GradleRunner run(String... tasks) {
-//        GradleRunner.create()
-//            .withPluginClasspath(pluginClasspath)
-//            .withProjectDir(projectDir)
-//            .withArguments(tasks)
-//            .withDebug(true)
-//    }
+
 //
 //    private String exec(String... tasks) {
 //        StringBuffer sout = new StringBuffer(), serr = new StringBuffer()
@@ -355,19 +387,7 @@ class JavaDistributionPluginTests extends Specification {
 //        sleep 1000 // wait for the Java process to actually run
 //        return sout.toString()
 //    }
-//
-//    def setup() {
-//        projectDir = temporaryFolder.root
-//        buildFile = temporaryFolder.newFile('build.gradle')
-//
-//        def pluginClasspathResource = getClass().classLoader.findResource("plugin-classpath.txt")
-//        if (pluginClasspathResource == null) {
-//            throw new IllegalStateException("Did not find plugin classpath resource, run `testClasses` build task.")
-//        }
-//
-//        pluginClasspath = pluginClasspathResource.readLines()
-//            .collect { it.replace('\\', '\\\\') } // escape backslashes in Windows paths
-//            .collect { new File(it) }
-//    }
+
+
 
 }

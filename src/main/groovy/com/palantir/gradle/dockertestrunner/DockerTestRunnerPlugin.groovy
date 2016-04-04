@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.palantir.gradle.javadist
+package com.palantir.gradle.dockertestrunner
 
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -88,22 +88,25 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                 jacocoReportTask.dependsOn(testTask)
             })
 
-            // add tasks that will perform the individual tasks for all Dockerfiles
-            String allGroupName = getGroupName("All")
-            project.task("build${TASK_STRING}", {
-                group = allGroupName
-                description = "Build all of the Docker test environment containers."
-            }).setDependsOn(buildDockerTasks)
+            println("dockerFiles.isEmpty(): ${dockerFiles.isEmpty()}")
+            if (!dockerFiles.isEmpty()) {
+                // add tasks that will perform the individual tasks for all Dockerfiles
+                String allGroupName = getGroupName("All")
+                project.task("build${TASK_STRING}", {
+                    group = allGroupName
+                    description = "Build all of the Docker test environment containers."
+                }).setDependsOn(buildDockerTasks)
 
-            project.task("test${TASK_STRING}", {
-                group = allGroupName
-                description = "Run tests in all of the Docker test environment containers."
-            }).setDependsOn(testDockerTasks)
+                project.task("test${TASK_STRING}", {
+                    group = allGroupName
+                    description = "Run tests in all of the Docker test environment containers."
+                }).setDependsOn(testDockerTasks)
 
-            project.task("jacocoTestReport${TASK_STRING}", {
-                group = allGroupName
-                description = "Generate Jacoco coverage reports in all of the Docker test environment containers."
-            }).setDependsOn(testDockerTasks)
+                project.task("jacocoTestReport${TASK_STRING}", {
+                    group = allGroupName
+                    description = "Generate Jacoco coverage reports in all of the Docker test environment containers."
+                }).setDependsOn(testDockerTasks)
+            }
         }
     }
 

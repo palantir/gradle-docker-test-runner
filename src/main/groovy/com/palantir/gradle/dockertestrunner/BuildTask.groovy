@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.palantir.gradle.javadist
+package com.palantir.gradle.dockertestrunner
 
 import org.gradle.api.tasks.Exec
 
