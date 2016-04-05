@@ -11,6 +11,8 @@ plugins {
     id 'maven-publish'
 }
 
+apply from: "${rootDir}/gradle/idea-test-kit-fix.gradle"
+
 task createClasspathManifest {
     def outputDir = file("$buildDir/$name")
 
