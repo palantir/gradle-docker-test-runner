@@ -1,3 +1,15 @@
+buildscript {
+    repositories {
+        maven {
+            url 'https://artifactory.palantir.build/artifactory/all-jar'
+        }
+    }
+
+    dependencies {
+        classpath "com.palantir.gradle.ideatestfix:gradle-idea-test-fix:0.1.0"
+    }
+}
+
 plugins {
     id 'com.gradle.plugin-publish' version '0.9.2'
     id 'com.jfrog.bintray' version '1.5'
@@ -10,7 +22,7 @@ plugins {
     id 'maven-publish'
 }
 
-apply from: "${rootDir}/gradle/idea-test-kit-fix.gradle"
+apply plugin: 'com.palantir.idea-test-fix'
 
 task createClasspathManifest {
     def outputDir = file("$buildDir/$name")
