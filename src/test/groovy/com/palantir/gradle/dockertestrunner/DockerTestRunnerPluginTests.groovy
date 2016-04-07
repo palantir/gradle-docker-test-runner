@@ -30,7 +30,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class DockerTestRunnerPluginTests extends Specification {
 
     @Rule
-    TemporaryFolder temporaryFolder = new TemporaryFolder()
+    TemporaryFolder temporaryFolder = new TemporaryFolder(new File("."))
 
     File projectDir
     File buildFile
