@@ -40,6 +40,10 @@ class DockerTestRunnerPluginTests extends Specification {
         projectDir = temporaryFolder.root
         buildFile = temporaryFolder.newFile('build.gradle')
 
+        temporaryFolder.newFile('settings.gradle') << '''
+            rootProject.name = 'dockerTestRunnerPluginTests'
+        '''.stripIndent()
+
         def pluginClasspathResource = getClass().classLoader.findResource("plugin-classpath.txt")
         if (pluginClasspathResource == null) {
             throw new IllegalStateException("Did not find plugin classpath resource, run `testClasses` build task.")
@@ -214,7 +218,6 @@ class DockerTestRunnerPluginTests extends Specification {
                 dockerFiles = fileTree(project.rootDir) {
                     include '**/Dockerfile'
                 }
-                gradleCacheMode = 'NONE'
             }
         '''.stripIndent()
 
@@ -254,14 +257,13 @@ class DockerTestRunnerPluginTests extends Specification {
                     dockerFiles = fileTree(project.rootDir) {
                         include '**/Dockerfile'
                     }
-                    gradleCacheMode = 'NONE'
                 }
             }
         '''.stripIndent()
 
         // create subproject
         temporaryFolder.newFolder('test-subproject')
-        File settings = temporaryFolder.newFile('settings.gradle')
+        File settings = temporaryFolder.root.toPath().resolve('settings.gradle').toFile()
         settings << '''
             include 'test-subproject'
         '''.stripIndent()
@@ -301,7 +303,6 @@ class DockerTestRunnerPluginTests extends Specification {
                 dockerFiles = fileTree(project.rootDir) {
                     include '**/Dockerfile'
                 }
-                gradleCacheMode = 'NONE'
             }
 
             repositories {

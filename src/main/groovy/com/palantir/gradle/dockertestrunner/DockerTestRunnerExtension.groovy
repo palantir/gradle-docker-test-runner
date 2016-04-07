@@ -48,12 +48,4 @@ class DockerTestRunnerExtension {
      */
     Closure<FileCollection> jacocoClassDirectories
 
-    /**
-     * Optional parameter that controls how Gradle cache is handled. The default behavior is to mount the host's
-     * Gradle cache directly into the container. This typically provides the highest performance, but in some instances
-     * sharing the same Gradle cache between multiple concurrent Gradle builds can lead to locking issues ("Timeout
-     * waiting to lock artifact cache").
-     */
-    GradleCacheMode gradleCacheMode = GradleCacheMode.MOUNT
-
 }

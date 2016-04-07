@@ -17,7 +17,6 @@
 package com.palantir.gradle.dockertestrunner
 
 import com.google.common.collect.Multimap
-import org.gradle.api.invocation.Gradle
 import org.gradle.api.tasks.Exec
 
 class RunTask extends Exec {
@@ -34,10 +33,10 @@ class RunTask extends Exec {
      */
     public void configure(String taskName,
                           String containerName,
-                          Multimap<String, String> customArguments,
-                          GradleCacheMode gradleCacheMode) {
+                          Multimap<String, String> customArguments) {
         workingDir(project.rootDir)
 
+        String projectGradleDataVolume = "${NameUtils.sanitizeForDocker(project.rootProject.name)}-gradle-data"
         String homeDir = System.getProperty('user.home')
 
         List<Object> arguments = []
@@ -54,32 +53,12 @@ class RunTask extends Exec {
         arguments << '-w' << '/workspace'
         arguments << '-v' << "${project.rootDir.absolutePath}:/workspace"
         arguments << '-v' << "${homeDir}/.docker:/root/.docker"
-
-        String gradleHome = project.getGradle().getGradleUserHomeDir().absolutePath;
-        switch (gradleCacheMode) {
-            case GradleCacheMode.MOUNT:
-                arguments << '-v' << "${gradleHome}:/root/.gradle"
-                break
-            case GradleCacheMode.COPY:
-                arguments << '-v' << "${gradleHome}:/root/host-gradle"
-                break
-            case GradleCacheMode.NONE:
-                break
-            default:
-                throw new IllegalStateException("Unrecognized gradle cache mode: ${gradleCacheMode}")
-        }
-
         arguments << '-v' << "${homeDir}/.m2:/root/.m2"
+        arguments << '-v' << "${projectGradleDataVolume}:/root/.gradle"
         arguments << '--name' << DockerTestRunnerPlugin.getContainerRunName(project, containerName)
         arguments << containerName
-
         arguments << '/bin/bash' << '-c'
-        String command = ''
-        if (gradleCacheMode == GradleCacheMode.COPY) {
-            command = 'cp -r /root/host-gradle /root/.gradle && '
-        }
-        command += "./gradlew --stacktrace ${project.path}:${taskName}"
-        arguments << command
+        arguments << "./gradlew --stacktrace ${project.path}:${taskName}"
 
         commandLine(arguments)
     }
