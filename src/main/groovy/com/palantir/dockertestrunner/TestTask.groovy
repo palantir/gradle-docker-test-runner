@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import org.gradle.api.Project
 import org.gradle.api.tasks.testing.Test
@@ -32,7 +32,7 @@ class TestTask extends Test {
         testClassesDir = project.sourceSets.test.output.classesDir
         classpath = project.sourceSets.test.runtimeClasspath
 
-        String sanitizedName = sanitizeForPath(containerName)
+        String sanitizedName = NameUtils.sanitizeForPath(containerName)
         reports.junitXml.destination("${project.test.reports.junitXml.getDestination().absolutePath}-${sanitizedName}")
         reports.html.destination("${project.test.reports.html.getDestination().absolutePath}-${sanitizedName}")
 
@@ -42,19 +42,11 @@ class TestTask extends Test {
     }
 
     /**
-     * Returns the provided String with all '/' characters replaced with '_' so that the name can be used as part
-     * of a path without causing directories to be created.
-     */
-    static String sanitizeForPath(String name) {
-        return name.replaceAll('/', '_')
-    }
-
-    /**
      * Returns the File where the Jacoco raw coverage data is written for the tests in the given project for the given
      * container.
      */
     static File getJacocoDestinationFile(Project project, String containerName) {
-        return new File("${project.getBuildDir()}/jacoco/${sanitizeForPath(containerName)}.exec")
+        return new File("${project.getBuildDir()}/jacoco/${NameUtils.sanitizeForPath(containerName)}.exec")
     }
 
 }

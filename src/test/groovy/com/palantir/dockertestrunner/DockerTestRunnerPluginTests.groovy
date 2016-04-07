@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import org.apache.commons.io.FileUtils
 import org.gradle.testkit.runner.BuildResult
@@ -30,7 +30,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class DockerTestRunnerPluginTests extends Specification {
 
     @Rule
-    TemporaryFolder temporaryFolder = new TemporaryFolder()
+    TemporaryFolder temporaryFolder = new TemporaryFolder(new File("."))
 
     File projectDir
     File buildFile
@@ -39,6 +39,10 @@ class DockerTestRunnerPluginTests extends Specification {
     def setup() {
         projectDir = temporaryFolder.root
         buildFile = temporaryFolder.newFile('build.gradle')
+
+        temporaryFolder.newFile('settings.gradle') << '''
+            rootProject.name = 'dockerTestRunnerPluginTests'
+        '''.stripIndent()
 
         def pluginClasspathResource = getClass().classLoader.findResource("plugin-classpath.txt")
         if (pluginClasspathResource == null) {
@@ -214,7 +218,6 @@ class DockerTestRunnerPluginTests extends Specification {
                 dockerFiles = fileTree(project.rootDir) {
                     include '**/Dockerfile'
                 }
-                gradleCacheMode = 'NONE'
             }
         '''.stripIndent()
 
@@ -254,14 +257,13 @@ class DockerTestRunnerPluginTests extends Specification {
                     dockerFiles = fileTree(project.rootDir) {
                         include '**/Dockerfile'
                     }
-                    gradleCacheMode = 'NONE'
                 }
             }
         '''.stripIndent()
 
         // create subproject
         temporaryFolder.newFolder('test-subproject')
-        File settings = temporaryFolder.newFile('settings.gradle')
+        File settings = temporaryFolder.root.toPath().resolve('settings.gradle').toFile()
         settings << '''
             include 'test-subproject'
         '''.stripIndent()
@@ -301,7 +303,6 @@ class DockerTestRunnerPluginTests extends Specification {
                 dockerFiles = fileTree(project.rootDir) {
                     include '**/Dockerfile'
                 }
-                gradleCacheMode = 'NONE'
             }
 
             repositories {

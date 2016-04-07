@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -27,7 +27,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
     private static final String TASK_STRING = 'DockerTestRunner'
 
     static String getContainerRunName(Project project, String containerName) {
-        return "${project.name}-${sanitize(containerName)}"
+        return "${project.name}-${NameUtils.sanitizeForDocker(containerName)}"
     }
 
     void apply(Project project) {
@@ -63,7 +63,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                     group = currGroupName
                     description = "Run tests in the Docker test environment container ${containerName}."
                 })
-                runTestTask.configure(getTestTaskName(containerName), containerName, ext.customDockerRunArgs, ext.gradleCacheMode)
+                runTestTask.configure(getTestTaskName(containerName), containerName, ext.customDockerRunArgs)
                 runTestTask.dependsOn(buildTask)
                 testDockerTasks << runTestTask
 
@@ -73,7 +73,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                     group = currGroupName
                     description = "Generate Jacoco coverage report in the Docker test environment container ${containerName}."
                 })
-                runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, ext.customDockerRunArgs, ext.gradleCacheMode)
+                runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, ext.customDockerRunArgs)
                 runJacocoReportTask.dependsOn(buildTask)
                 jacocoDockerTasks << runJacocoReportTask
 
@@ -123,7 +123,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
             throw new IllegalStateException("The following files were either nonexistent or were directories: ${unsupportedFiles}")
         }
 
-        def groupedByName = collection.groupBy({ file -> "${sanitize(file.parentFile.name)}/${sanitize(file.name)}" });
+        def groupedByName = collection.groupBy({ file -> "${NameUtils.sanitizeForDocker(file.parentFile.name)}/${NameUtils.sanitizeForDocker(file.name)}" });
 
         def filesWithNameCollisions = groupedByName.findAll({ it.value.size() > 1 }).collect { it.value }
         if (!filesWithNameCollisions.isEmpty()) {
@@ -135,27 +135,8 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
         })
     }
 
-    /**
-     * Sanitize string so that it can be used as Dockerfile identifier (A-Za-z0-9_-). All characters are converted to
-     * lowercase and any characters that are not in the set of acceptable characters are replaced with an underscore
-     * ('_').
-     */
-    private static String sanitize(String input) {
-        StringBuilder builder = new StringBuilder();
-        for (char c : input.toCharArray()) {
-            if (Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.') {
-                builder.append(Character.toLowerCase(c))
-            } else {
-                builder.append('_')
-            }
-        }
-
-        return builder.toString()
-    }
-
     private static String getGroupName(String subGroup) {
         return "${GROUP_NAME}: ${subGroup}"
-
     }
 
     private static String getTestTaskName(String containerName) {

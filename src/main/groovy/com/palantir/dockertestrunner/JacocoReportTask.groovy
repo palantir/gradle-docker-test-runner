@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import org.gradle.api.file.FileCollection
 import org.gradle.testing.jacoco.tasks.JacocoReport
@@ -28,7 +28,7 @@ class JacocoReportTask extends JacocoReport {
      * the "test" runtime classpath of the current project.
      */
     public void configure(String containerName, Closure<FileCollection> jacocoClassDirectories) {
-        String sanitizedName = TestTask.sanitizeForPath(containerName)
+        String sanitizedName = NameUtils.sanitizeForPath(containerName)
         reports.xml.enabled = true
         reports.xml.destination("${project.jacoco.getReportsDir().absolutePath}/${sanitizedName}/jacocoTestReport.xml")
         reports.html.destination("${project.jacoco.getReportsDir().absolutePath}/${sanitizedName}/html")
