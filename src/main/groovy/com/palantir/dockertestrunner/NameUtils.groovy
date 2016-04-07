@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 final class NameUtils {
     private NameUtils() {

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import org.apache.commons.io.FileUtils
 import org.gradle.testkit.runner.BuildResult

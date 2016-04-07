@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import com.google.common.collect.ArrayListMultimap
 import com.google.common.collect.Multimap

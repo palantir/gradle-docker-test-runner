@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import com.google.common.collect.Multimap
 import org.gradle.api.tasks.Exec

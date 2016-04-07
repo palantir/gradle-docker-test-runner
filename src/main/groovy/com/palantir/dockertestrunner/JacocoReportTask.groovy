@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.palantir.gradle.dockertestrunner
+package com.palantir.dockertestrunner
 
 import org.gradle.api.file.FileCollection
 import org.gradle.testing.jacoco.tasks.JacocoReport
