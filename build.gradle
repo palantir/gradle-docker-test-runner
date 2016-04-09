@@ -100,7 +100,7 @@ bintray {
 bintrayUpload.dependsOn 'generatePomFileForBintrayPublication', 'sourceJar', 'build'
 
 bintrayUpload.onlyIf {
-    System.env.BINTRAY_USER && System.env.BINTRAY_KEY && project.version ==~ /\d+\.\d+\.\d+/
+    System.env.BINTRAY_USER && System.env.BINTRAY_KEY && project.version ==~ /\d+\.\d+\.\d+(-rc[0-9]+)?/
 }
 
 pluginBundle {
