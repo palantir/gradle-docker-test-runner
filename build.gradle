@@ -126,3 +126,19 @@ jacocoTestReport {
         xml.enabled true
     }
 }
+
+if (System.env.CIRCLE_ARTIFACTS) {
+    task copyCiArtifactsToCircle {
+        outputs.upToDateWhen { false }
+        doLast {
+            [
+                file("${buildDir}/reports"), // jacoco, checkstyle, findbugs
+            ].each { src ->
+                copy {
+                    from src
+                    into "${System.env.CIRCLE_ARTIFACTS}/${project.name}/${src.name}"
+                }
+            }
+        }
+    }
+}

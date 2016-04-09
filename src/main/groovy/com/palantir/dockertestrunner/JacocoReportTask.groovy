@@ -27,7 +27,7 @@ class JacocoReportTask extends JacocoReport {
      * which the tests are meant to be run. Runs all of the tests in the "test" source set of the current project using
      * the "test" runtime classpath of the current project.
      */
-    public void configure(String containerName, Closure<FileCollection> jacocoClassDirectories) {
+    public void configure(String containerName, List<Closure> config) {
         String sanitizedName = NameUtils.sanitizeForPath(containerName)
         reports.xml.enabled = true
         reports.xml.destination("${project.jacoco.getReportsDir().absolutePath}/${sanitizedName}/jacocoTestReport.xml")
@@ -37,9 +37,12 @@ class JacocoReportTask extends JacocoReport {
         sourceDirectories = project.files(project.sourceSets.main.allSource.srcDirs)
         classDirectories = project.files(project.sourceSets.main.output.classesDir)
 
-        // apply custom class directories closure if supplied
-        if (jacocoClassDirectories) {
-            classDirectories = jacocoClassDirectories(classDirectories)
+        // invoke all non-null closures that were provided
+        config.each {
+            if (it) {
+                it.delegate = this
+                it()
+            }
         }
     }
 

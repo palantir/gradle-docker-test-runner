@@ -16,36 +16,70 @@
 
 package com.palantir.dockertestrunner
 
-import com.google.common.collect.ArrayListMultimap
-import com.google.common.collect.Multimap
+import com.google.common.collect.ImmutableMap
 import org.gradle.api.file.FileCollection
 
+class DockerTestRunnerExtension implements DockerRunnerConfig {
 
-class DockerTestRunnerExtension {
-    /**
-     * Collection of Dockerfile files. Gradle tasks for building the Docker container, running the container
-     * and running the tests for the environment will be generated for each file in the collection. Every
-     * file in the collection must be a Dockerfile file (however, the files can be named something other than
-     * "Dockerfile"). The context of each Dockerfile will be the directory in which it resides.
-     */
-    FileCollection dockerFiles
+    // stores the runners. Uses a {@link LinkedHashMap} to maintain items in insertion order.
+    private final Map<String, DockerRunner> dockerRunners = new LinkedHashMap<>()
 
     /**
-     * Map of supplemental flags provided to the 'docker run' command. The key is the full flag including any leading
-     * dashes -- for example, '-v' or '--cidfile'. The values are the values that will be provided for the key flag.
-     * A separate flag will be added for each value of the key -- for example, if the key '-e' has values 'COLOR=pink'
-     * and 'FOO=bar', then '-e COLOR=pink' and '-e FOO=bar' are both specified separately. The run arguments in this
-     * map are specified before the built-in ones, so if there are configuration values that conflict, the built-in
-     * ones will take precedence.
+     * Adds the provided DockerRunner with the provided name and configuration.
      */
-    Multimap<String, String> customDockerRunArgs = ArrayListMultimap.create();
+    void dockerRunner(Map params) {
+        // file must be specified
+        File dockerFile = params['dockerFile']
+        if (!dockerFile) {
+            throw new IllegalArgumentException('dockerFile was not specified')
+        }
+
+        String name = params['name']
+        if (name) {
+            name = NameUtils.sanitizeForDocker(name)
+        } else {
+            // if name is not specified, generate based on file
+            name = getDockerNameForFile(dockerFile)
+        }
+
+        DockerRunner runner = new DockerRunner(dockerFile: dockerFile, testConfig: params['testConfig'], jacocoConfig: params['jacocoConfig'])
+        dockerRunners << [(name): runner]
+    }
 
     /**
-     * Optional Closure that can be specified to customize the class files that are considered in Jacoco coverage
-     * reports. The closure is supplied with a FileCollection that starts with all class files for the project and the
-     * FileCollection returned by the closure should include only the class files that should be considered for
-     * coverage.
+     * Adds the provided files as Docker runners with generated names based on their file path. All of the files must
+     * exist and must be regular files (they cannot be directories). The keys in the returned map are Strings of the
+     * form "parent/filename" and are sanitized for Docker use -- the "parent" and "filename" portion are all lowercase
+     * and any unsupported character is replaced with an underscore ('_'). If the provided files do not have unique
+     * names after the transformation is applied, an exception is thrown.
      */
-    Closure<FileCollection> jacocoClassDirectories
+    void dockerFiles(FileCollection files) {
+        Collection unsupportedFiles = files.findAll { file -> !file.exists() || file.isDirectory() }
+        if (!unsupportedFiles.isEmpty()) {
+            throw new IllegalStateException("The following files were either nonexistent or were directories: ${unsupportedFiles}")
+        }
+
+        Map<String, List<File>> groupedByName = files.groupBy { file -> DockerTestRunnerExtension.getDockerNameForFile(file) }
+
+        Collection filesWithNameCollisions = groupedByName.findAll { it.value.size() > 1 }.collect { it.value }
+        if (!filesWithNameCollisions.isEmpty()) {
+            throw new IllegalStateException("Multiple files had the \"parent/file\" name after being standardized: ${filesWithNameCollisions}");
+        }
+
+        dockerRunners.putAll((Map<String, DockerRunner>) groupedByName.collectEntries {
+            [(it.key): new DockerRunner(dockerFile: it.value.get(0))]
+        })
+    }
+
+    /**
+     * Returns the Docker runners.
+     */
+    Map<String, DockerRunner> getDockerRunners() {
+        return ImmutableMap.copyOf(dockerRunners)
+    }
+
+    private static String getDockerNameForFile(File file) {
+        return "${NameUtils.sanitizeForDocker(file.parentFile.name)}/${NameUtils.sanitizeForDocker(file.name)}"
+    }
 
 }

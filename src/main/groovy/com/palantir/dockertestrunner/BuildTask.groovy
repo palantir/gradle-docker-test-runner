@@ -24,7 +24,7 @@ class BuildTask extends Exec {
      * Configures the task to build the Docker image specified by the provided Dockerfile. The image is tagged with
      * the provided name and is built in the directory in which the provided image file resides.
      */
-    public void configure(File dockerFile, String imageName) {
+    public void configure(String imageName, File dockerFile) {
         workingDir(project.rootDir)
 
         commandLine('docker',
