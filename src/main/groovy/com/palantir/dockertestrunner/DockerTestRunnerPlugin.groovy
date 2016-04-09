@@ -16,10 +16,12 @@
 
 package com.palantir.dockertestrunner
 
+import com.google.common.collect.ArrayListMultimap
+import com.google.common.collect.Multimap
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
-import org.gradle.api.file.FileCollection
+import org.gradle.testing.jacoco.plugins.JacocoPlugin
 
 class DockerTestRunnerPlugin implements Plugin<Project> {
 
@@ -36,18 +38,13 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
         // tasks are added after evaluation because they are determined by the "dockerFiles" value in the extension
         // object, which is not available until after initial evaluation.
         project.afterEvaluate {
-            // get the Dockerfiles
-            Map<String, File> dockerFiles = new HashMap<>()
-            if (ext.dockerFiles != null) {
-                dockerFiles = getDockerContainerFiles(ext.dockerFiles)
-            }
-
             List<Task> buildDockerTasks = []
             List<Task> testDockerTasks = []
             List<Task> jacocoDockerTasks = []
 
             // each Dockerfile gets its own set of tasks
-            dockerFiles.each({ containerName, dockerFile ->
+            Map<String, DockerRunner> dockerRunners = ext.getDockerRunners()
+            dockerRunners.each { containerName, dockerRunner ->
                 String currGroupName = getGroupName(containerName)
 
                 // task that builds the image
@@ -55,7 +52,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                     group = currGroupName
                     description = "Build the Docker test environment image ${containerName}."
                 })
-                buildTask.configure(dockerFile, containerName)
+                buildTask.configure(containerName, dockerRunner.dockerFile)
                 buildDockerTasks << buildTask
 
                 // task that runs the tests for this project in the container
@@ -63,76 +60,75 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                     group = currGroupName
                     description = "Run tests in the Docker test environment container ${containerName}."
                 })
-                runTestTask.configure(getTestTaskName(containerName), containerName, ext.customDockerRunArgs)
+
+                // create runner args -- combination of over-all args and runner-specific args
+                Multimap<String, String> runnerArgs = ArrayListMultimap.create(ext.runArgs)
+                runnerArgs.putAll(dockerRunner.runArgs)
+
+                runTestTask.configure(getTestTaskName(containerName), containerName, runnerArgs)
                 runTestTask.dependsOn(buildTask)
                 testDockerTasks << runTestTask
-
-                // task that creates the Jacoco coverage report for this project in the container (will run the tests
-                // in the container if needed).
-                RunTask runJacocoReportTask = project.tasks.create("runJacocoTestReport${TASK_STRING}-${containerName}", RunTask, {
-                    group = currGroupName
-                    description = "Generate Jacoco coverage report in the Docker test environment container ${containerName}."
-                })
-                runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, ext.customDockerRunArgs)
-                runJacocoReportTask.dependsOn(buildTask)
-                jacocoDockerTasks << runJacocoReportTask
 
                 // test task that should be run in container. Is a standard "Test" task whose output parameters are
                 // configured to write output to directory based on container name.
                 TestTask testTask = project.tasks.create(getTestTaskName(containerName), TestTask)
-                testTask.configure(containerName)
+                testTask.configure(containerName, [ext.testConfig, dockerRunner.testConfig])
 
-                // report task that should be run in container. Is a standard "JacocoReport" task whose input and output
-                // parameters are configured to read input and write output to directories based on container name.
-                JacocoReportTask jacocoReportTask = project.tasks.create(getJacocoTaskName(containerName), JacocoReportTask)
-                jacocoReportTask.configure(containerName, ext.jacocoClassDirectories)
-                jacocoReportTask.dependsOn(testTask)
-            })
+                // add Jacoco plugins only if Jacoco plugin has been applied
+                project.plugins.withType(JacocoPlugin) {
+                    // task that creates the Jacoco coverage report for this project in the container (will run the tests
+                    // in the container if needed).
+                    RunTask runJacocoReportTask = project.tasks.create("runJacocoTestReport${TASK_STRING}-${containerName}", RunTask, {
+                        group = currGroupName
+                        description = "Generate Jacoco coverage report in the Docker test environment container ${containerName}."
+                    })
+                    runJacocoReportTask.configure(getJacocoTaskName(containerName), containerName, runnerArgs)
+                    runJacocoReportTask.dependsOn(buildTask)
+                    jacocoDockerTasks << runJacocoReportTask
 
-            if (!dockerFiles.isEmpty()) {
+                    // report task that should be run in container. Is a standard "JacocoReport" task whose input and output
+                    // parameters are configured to read input and write output to directories based on container name.
+                    // Only added if Jacoco plugin is applied.
+                    JacocoReportTask jacocoReportTask = project.tasks.create(getJacocoTaskName(containerName), JacocoReportTask)
+                    jacocoReportTask.configure(containerName, [ext.jacocoConfig, dockerRunner.jacocoConfig])
+                    jacocoReportTask.dependsOn(testTask)
+                }
+            }
+
+            if (!dockerRunners.isEmpty()) {
                 // add tasks that will perform the individual tasks for all Dockerfiles
                 String allGroupName = getGroupName("All")
                 project.task("build${TASK_STRING}", {
                     group = allGroupName
                     description = "Build all of the Docker test environment containers."
                 }).setDependsOn(buildDockerTasks)
+                setTaskOrdering(buildDockerTasks)
 
                 project.task("test${TASK_STRING}", {
                     group = allGroupName
                     description = "Run tests in all of the Docker test environment containers."
                 }).setDependsOn(testDockerTasks)
+                setTaskOrdering(testDockerTasks)
 
-                project.task("jacocoTestReport${TASK_STRING}", {
-                    group = allGroupName
-                    description = "Generate Jacoco coverage reports in all of the Docker test environment containers."
-                }).setDependsOn(testDockerTasks)
+                if (!jacocoDockerTasks.isEmpty()) {
+                    project.task("jacocoTestReport${TASK_STRING}", {
+                        group = allGroupName
+                        description = "Generate Jacoco coverage reports in all of the Docker test environment containers."
+                    }).setDependsOn(jacocoDockerTasks)
+                    setTaskOrdering(jacocoDockerTasks)
+                }
             }
         }
     }
 
     /**
-     * Returns a map from the name of the Docker container to the Dockerfile for the container. All of the files must
-     * exist and must be regular files (they cannot be directories). The keys in the returned map are Strings of the
-     * form "parent/filename" and are sanitized for Docker use -- the "parent" and "filename" portion are all lowercase
-     * and any unsupported character is replaced with an underscore ('_'). If the provided files do not have unique
-     * names after the transformation is applied, an exception is thrown.
+     * Sets the 'shouldRunAfter' property on the provided tasks such that they are specified to run in the provided
+     * order. Specifically, each task's 'shouldRunAfter' is set to be the task that immediately precedes it.
      */
-    private static Map<String, File> getDockerContainerFiles(FileCollection collection) {
-        def unsupportedFiles = collection.findAll({ file -> !file.exists() || file.isDirectory() })
-        if (!unsupportedFiles.isEmpty()) {
-            throw new IllegalStateException("The following files were either nonexistent or were directories: ${unsupportedFiles}")
+    private static void setTaskOrdering(List<Task> tasks) {
+        for (int i = tasks.size() - 1; i > 0; i--) {
+            tasks.get(i).shouldRunAfter(tasks.get(i-1))
         }
-
-        def groupedByName = collection.groupBy({ file -> "${NameUtils.sanitizeForDocker(file.parentFile.name)}/${NameUtils.sanitizeForDocker(file.name)}" });
-
-        def filesWithNameCollisions = groupedByName.findAll({ it.value.size() > 1 }).collect { it.value }
-        if (!filesWithNameCollisions.isEmpty()) {
-            throw new IllegalStateException("Multiple files had the \"parent/file\" name after being standardized: ${filesWithNameCollisions}");
-        }
-
-        return groupedByName.collectEntries({
-            [(it.key): it.value.get(0)]
-        })
     }
 
     private static String getGroupName(String subGroup) {

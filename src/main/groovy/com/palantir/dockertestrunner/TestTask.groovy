@@ -17,7 +17,9 @@
 package com.palantir.dockertestrunner
 
 import org.gradle.api.Project
+import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.DefaultResolvedModuleVersion
 import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.plugins.JacocoPlugin
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 
 class TestTask extends Test {
@@ -28,7 +30,7 @@ class TestTask extends Test {
      * which the tests are meant to be run. Runs all of the tests in the "test" source set of the current project using
      * the "test" runtime classpath of the current project.
      */
-    public void configure(String containerName) {
+    public void configure(String containerName, List<Closure> config) {
         testClassesDir = project.sourceSets.test.output.classesDir
         classpath = project.sourceSets.test.runtimeClasspath
 
@@ -36,9 +38,17 @@ class TestTask extends Test {
         reports.junitXml.destination("${project.test.reports.junitXml.getDestination().absolutePath}-${sanitizedName}")
         reports.html.destination("${project.test.reports.html.getDestination().absolutePath}-${sanitizedName}")
 
-        include("**/*")
+        project.plugins.withType(JacocoPlugin) {
+            ((JacocoTaskExtension) jacoco).destinationFile = getJacocoDestinationFile(project, containerName)
+        }
 
-        ((JacocoTaskExtension) jacoco).destinationFile = getJacocoDestinationFile(project, containerName)
+        // invoke all non-null closures that were provided
+        config.each {
+            if (it) {
+                it.delegate = this
+                it()
+            }
+        }
     }
 
     /**

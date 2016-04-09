@@ -1,342 +1,279 @@
-/*
- * Copyright 2016 Palantir Technologies
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * <http://www.apache.org/licenses/LICENSE-2.0>
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.palantir.dockertestrunner
 
-import org.apache.commons.io.FileUtils
-import org.gradle.testkit.runner.BuildResult
-import org.gradle.testkit.runner.GradleRunner
-import org.gradle.testkit.runner.TaskOutcome
+import com.google.common.collect.ImmutableSet
+import org.gradle.api.Project
+import org.gradle.api.ProjectState
+import org.gradle.api.internal.project.DefaultProject
+import org.gradle.api.internal.project.ProjectStateInternal
+import org.gradle.testfixtures.ProjectBuilder
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
-
-import java.nio.file.Paths
-import java.nio.file.attribute.PosixFilePermissions
 
 class DockerTestRunnerPluginTests extends Specification {
 
     @Rule
     TemporaryFolder temporaryFolder = new TemporaryFolder(new File("."))
 
-    File projectDir
-    File buildFile
-    List<File> pluginClasspath
+    private Project createRootProject() {
+        return ProjectBuilder
+                .builder()
+                .withProjectDir(temporaryFolder.root)
+                .build()
+    }
 
-    def setup() {
-        projectDir = temporaryFolder.root
-        buildFile = temporaryFolder.newFile('build.gradle')
+    def 'verify that plugin fails if nonexistent Dockerfiles are specified'() {
+        given:
+        DefaultProject project = createRootProject()
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
 
-        temporaryFolder.newFile('settings.gradle') << '''
-            rootProject.name = 'dockerTestRunnerPluginTests'
-        '''.stripIndent()
-
-        def pluginClasspathResource = getClass().classLoader.findResource("plugin-classpath.txt")
-        if (pluginClasspathResource == null) {
-            throw new IllegalStateException("Did not find plugin classpath resource, run `testClasses` build task.")
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerFiles project.files('/foo/bar/nonexistent')
         }
 
-        pluginClasspath = pluginClasspathResource.readLines()
-                .collect { it.replace('\\', '\\\\') } // escape backslashes in Windows paths
-                .collect { new File(it) }
-    }
-
-    /**
-     * Copies the Gradle resources needed to run Gradle within Docker for the tests. When the unit tests run, a
-     * temporary directory with the simple test Gradle project is created. When the Docker-based tasks are run,
-     * the container mounts that directory and runs './gradlew' within it, so it is necessary to ensure that minimum
-     * resources needed to run Docker within that container with this plugin being tested is present.
-     */
-    private void setupDockerGradleResources() {
-        // copy gradle wrapper and set run permissions
-        FileUtils.copyFile(Paths.get('gradlew').toFile(), temporaryFolder.newFile('gradlew'))
-        java.nio.file.Files.setPosixFilePermissions(
-                temporaryFolder.getRoot().toPath().resolve('gradlew'),
-                PosixFilePermissions.fromString('rwxr-xr-x'))
-
-        // copy gradle directory
-        FileUtils.copyDirectory(Paths.get('gradle').toFile(), temporaryFolder.newFolder('gradle'))
-
-        // plugin needs to be available to the Gradle that runs within Docker. Copy the source files
-        // to 'buildSrc' to ensure that the plugin that runs within the Docker container is the same
-        // as the one being tested by these tests.
-        FileUtils.copyDirectory(Paths.get('src', 'main').toFile(), temporaryFolder.newFolder('buildSrc', 'src', 'main'))
-        File buildSrcBuildGradle = temporaryFolder.root.toPath().resolve('buildSrc/build.gradle').toFile();
-        buildSrcBuildGradle.createNewFile();
-        buildSrcBuildGradle << '''
-            repositories {
-                mavenCentral()
-            }
-
-            dependencies {
-                compile 'com.google.guava:guava-jdk5:17.0'
-            }
-        '''
-    }
-
-    private GradleRunner run(String... tasks) {
-        GradleRunner.create()
-                .withPluginClasspath(pluginClasspath)
-                .withProjectDir(projectDir)
-                .withArguments(tasks)
-                .withDebug(true)
-    }
-
-    def 'verify that tasks not present without Dockerfile'() {
-        given:
-        buildFile << '''
-            plugins {
-                id 'java'
-                id 'com.palantir.docker-test-runner'
-            }
-        '''.stripIndent()
-
-        when:
-        BuildResult buildResult = run('tasks').build()
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        buildResult.task(':tasks').outcome == TaskOutcome.SUCCESS
-        buildResult.output !=~ ('buildDockerTestRunner')
-        buildResult.output !=~ ('jacocoTestReportDockerTestRunner')
-        buildResult.output !=~ ('testDockerTestRunner')
+        IllegalStateException ex = thrown()
+        ex.message =~ 'The following files were either nonexistent or were directories'
+        ex.message =~ '/foo/bar/nonexistent'
     }
 
-    def 'verify that tasks present with Dockerfiles'() {
+    def 'verify that Jacoco tasks are not added if Jacoco plugin is not applied'() {
         given:
-        String openJdk7 = 'open-jdk-7'
-        File openJdk7Dir = temporaryFolder.newFolder(openJdk7)
-        openJdk7Dir.toPath().resolve("Dockerfile").toFile().createNewFile()
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
 
-        String oracleJdk8 = 'oracle-jdk-8'
-        File oracleJdk8Dir = temporaryFolder.newFolder(oracleJdk8)
-        oracleJdk8Dir.toPath().resolve("Dockerfile").toFile().createNewFile();
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
 
-        buildFile << '''
-            plugins {
-                id 'java'
-                id 'jacoco'
-                id 'com.palantir.docker-test-runner'
-            }
-
-            dockerTestRunner {
-                dockerFiles = fileTree(project.rootDir) {
-                    include '**/Dockerfile'
-                }
-            }
-        '''.stripIndent()
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
 
         when:
-        BuildResult buildResult = run('tasks').build()
-
-        then:
-        buildResult.task(':tasks').outcome == TaskOutcome.SUCCESS
-
-        // verify per Dockerfile tasks exist
-        [ openJdk7, oracleJdk8 ].each {
-            buildResult.output =~ ("Docker Test Runner: ${it}/dockerfile tasks")
-            buildResult.output =~ ("buildDockerTestRunner-${it}/dockerfile")
-            buildResult.output =~ ("runJacocoTestReportDockerTestRunner-${it}/dockerfile")
-            buildResult.output =~ ("runTestDockerTestRunner-${it}/dockerfile")
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerFiles project.files(dockerFile.absolutePath)
         }
 
-        // verify combined tasks exist
-        buildResult.output =~ ('buildDockerTestRunner')
-        buildResult.output =~ ('jacocoTestReportDockerTestRunner')
-        buildResult.output =~ ('testDockerTestRunner')
-    }
-
-    def 'verify buildDockerTestRunner builds Docker image'() {
-        given:
-        String openJdk8 = 'openjdk-8'
-        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
-        File dockerFile = openJdk8Dir.toPath().resolve("Dockerfile").toFile()
-        dockerFile.createNewFile();
-
-        dockerFile << '''
-            FROM nimmis/java-centos:openjdk-8-jdk
-            ENV JAVA_HOME=/usr/lib/jvm/java
-        '''.stripIndent()
-
-        buildFile << '''
-            plugins {
-                id 'java'
-                id 'jacoco'
-                id 'com.palantir.docker-test-runner'
-            }
-
-            dockerTestRunner {
-                dockerFiles = fileTree(project.rootDir) {
-                    include '**/Dockerfile'
-                }
-            }
-        '''.stripIndent()
-
-        when:
-        BuildResult buildResult = run('buildDockerTestRunner').build()
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        buildResult.task(':buildDockerTestRunner').outcome == TaskOutcome.SUCCESS
-        buildResult.output =~ ('FROM nimmis/java-centos:openjdk-8-jdk')
-        buildResult.output =~ ('Successfully built')
+        // no Jacoco tasks should be present
+        project.tasks.find { it.name =~ 'jacoco' } == null
     }
 
-    def 'verify testDockerTestRunner runs in Docker container in root project'() {
+    def 'verify that Dockerfile name is derived from parent and file name'() {
         given:
-        setupDockerGradleResources();
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
 
-        String openJdk8 = 'openjdk-8'
-        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
-        File dockerFile = openJdk8Dir.toPath().resolve('Dockerfile').toFile()
-        dockerFile.createNewFile();
-        dockerFile << '''
-            FROM nimmis/java-centos:openjdk-8-jdk
-            ENV JAVA_HOME=/usr/lib/jvm/java
-        '''.stripIndent()
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
 
-        buildFile << '''
-            plugins {
-                id 'java'
-                id 'jacoco'
-            }
-
-            apply plugin: 'com.palantir.docker-test-runner'
-
-            dockerTestRunner {
-                dockerFiles = fileTree(project.rootDir) {
-                    include '**/Dockerfile'
-                }
-            }
-        '''.stripIndent()
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
 
         when:
-        BuildResult buildResult = run('testDockerTestRunner').build()
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerFiles project.files(dockerFile.absolutePath)
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        buildResult.task(':testDockerTestRunner').outcome == TaskOutcome.SUCCESS
-        buildResult.output =~ (':testDockerTestRunner-openjdk-8/dockerfile UP-TO-DATE')
+        // taks should be added with name that's parent directory + child file name
+        project.tasks.find {
+            it.name =~ 'jdk7/dockerfile'
+        }
     }
 
-    def 'verify testDockerTestRunner runs in Docker container in subproject'() {
+    def 'verify task added by dockerRunner has provided name'() {
         given:
-        setupDockerGradleResources();
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
 
-        String openJdk8 = 'openjdk-8'
-        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
-        File dockerFile = openJdk8Dir.toPath().resolve('Dockerfile').toFile()
-        dockerFile.createNewFile();
-        dockerFile << '''
-            FROM nimmis/java-centos:openjdk-8-jdk
-            ENV JAVA_HOME=/usr/lib/jvm/java
-        '''.stripIndent()
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
 
-        buildFile << '''
-            plugins {
-                id 'java'
-                id 'jacoco'
-            }
-
-            subprojects {
-                apply plugin: 'java'
-                apply plugin: 'jacoco'
-                apply plugin: 'com.palantir.docker-test-runner'
-
-                dockerTestRunner {
-                    dockerFiles = fileTree(project.rootDir) {
-                        include '**/Dockerfile'
-                    }
-                }
-            }
-        '''.stripIndent()
-
-        // create subproject
-        temporaryFolder.newFolder('test-subproject')
-        File settings = temporaryFolder.root.toPath().resolve('settings.gradle').toFile()
-        settings << '''
-            include 'test-subproject'
-        '''.stripIndent()
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
 
         when:
-        BuildResult buildResult = run('testDockerTestRunner').build()
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner name: 'custom-jdk', dockerFile: dockerFile
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        buildResult.task(':test-subproject:testDockerTestRunner').outcome == TaskOutcome.SUCCESS
-        buildResult.output =~ (':test-subproject:testDockerTestRunner-openjdk-8/dockerfile UP-TO-DATE')
+        // taks should be added with specified name
+        project.tasks.find {
+            it.name =~ 'custom-jdk'
+        }
     }
 
-    def 'verify testDockerTestRunner runs tests in Docker container'() {
+    def 'verify task added by dockerRunner without name uses generated name'() {
         given:
-        setupDockerGradleResources();
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
 
-        String openJdk8 = 'openjdk-8'
-        File openJdk8Dir = temporaryFolder.newFolder(openJdk8)
-        File dockerFile = openJdk8Dir.toPath().resolve('Dockerfile').toFile()
-        dockerFile.createNewFile();
-        dockerFile << '''
-            FROM nimmis/java-centos:openjdk-8-jdk
-            ENV JAVA_HOME=/usr/lib/jvm/java
-            ENV FOO=bar
-        '''.stripIndent()
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
 
-        buildFile << '''
-            plugins {
-                id 'java'
-                id 'jacoco'
-            }
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
 
-            apply plugin: 'java'
-            apply plugin: 'com.palantir.docker-test-runner'
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner dockerFile: dockerFile
+        }
 
-            dockerTestRunner {
-                dockerFiles = fileTree(project.rootDir) {
-                    include '**/Dockerfile'
-                }
-            }
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
-            repositories {
-                mavenCentral()
-            }
+        then:
+        // taks should be added with name that's parent directory + child file name
+        project.tasks.find {
+            it.name =~ 'jdk7/dockerfile'
+        }
+    }
 
-            dependencies {
-                compile 'junit:junit:4.12'
-            }
-        '''.stripIndent()
+    def 'verify task added by dockerRunner must have dockerFile'() {
+        given:
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
 
-        // create test file that will run in container. The test asserts the presence of an environment variable that
-        // is set in the container file.
-        temporaryFolder.newFolder('src', 'test', 'java', 'foo')
-        temporaryFolder.newFile('src/test/java/foo/FooTest.java') << '''
-        package foo;
-        import org.junit.Assert;
-        import org.junit.Test;
-        public class FooTest {
-            @Test
-            public void fooTest() {
-                String foo = System.getenv("FOO");
-                Assert.assertEquals("bar", foo);
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
+
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
+
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner name: 'custom-jdk'
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
+
+        then:
+        IllegalArgumentException ex = thrown()
+        ex.message == 'dockerFile was not specified'
+    }
+
+    def 'verify project-level test configuration'() {
+        given:
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
+
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
+
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
+        Set<String> testIncludes = ImmutableSet.of('foobar')
+
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner dockerFile: dockerFile
+            testConfig = {
+                includes = testIncludes
             }
         }
-        '''.stripIndent()
 
-        when:
-        BuildResult buildResult = run('testDockerTestRunner').build()
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        println buildResult.output
-        buildResult.task(':testDockerTestRunner').outcome == TaskOutcome.SUCCESS
-        buildResult.output =~ (':testClasses')
+        project.tasks.getByName('testDockerTestRunner-jdk7/dockerfile').includes == testIncludes
+    }
+
+    def 'verify test-level test configuration'() {
+        given:
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
+
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
+
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
+        Set<String> testIncludes = ImmutableSet.of('foobar')
+
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner dockerFile: dockerFile, testConfig: {
+                includes = testIncludes
+            }
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
+
+        then:
+        project.tasks.getByName('testDockerTestRunner-jdk7/dockerfile').includes == testIncludes
+    }
+
+    def 'verify project-level and test-level configurations are both applied'() {
+        given:
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
+
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+        project.apply plugin: 'jacoco'
+
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
+        String projectInclude = 'project-include'
+        String testInclude = 'test-include'
+
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner dockerFile: dockerFile, testConfig: {
+                includes << testInclude
+            }
+
+            testConfig = {
+                includes << projectInclude
+            }
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
+
+        then:
+        project.tasks.getByName('testDockerTestRunner-jdk7/dockerfile').includes == ImmutableSet.of(projectInclude, testInclude)
     }
 
 }

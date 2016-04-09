@@ -11,10 +11,6 @@ checkout:
     - "[[ ! -s \"$(git rev-parse --git-dir)/shallow\" ]] || git fetch --unshallow"
     - git fetch --tags --all --prune
 
-dependencies:
-  override:
-    - docker pull nimmis/java-centos:openjdk-8-jdk
-
 general:
   artifacts:
     - build/libs
@@ -24,6 +20,7 @@ test:
     - ./gradlew --parallel build
   post:
     - ./gradlew jacocoTestReport coveralls
+    - ./gradlew copyCiArtifactsToCircle
 
 deployment:
   develop:
