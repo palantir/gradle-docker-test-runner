@@ -17,7 +17,7 @@ general:
 
 test:
   override:
-    - ./gradlew --parallel build
+    - ./gradlew build
   post:
     - ./gradlew jacocoTestReport coveralls
     - ./gradlew copyCiArtifactsToCircle
@@ -28,6 +28,7 @@ deployment:
     commands:
       - ./gradlew -i artifactoryPublish
   release:
-    tag: /\d+\.\d+\.\d+(-rc[0-9]+)?/
+    tag: /\d+\.\d+\.\d+/
     commands:
       - ./gradlew -i bintrayUpload
+      - ./gradlew -i -Dgradle.publish.key=$GRADLE_KEY -Dgradle.publish.secret=$GRADLE_SECRET publishPlugins
