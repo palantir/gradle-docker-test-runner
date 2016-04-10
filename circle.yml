@@ -26,10 +26,6 @@ test:
     - ./gradlew jacocoTestReport coveralls copyCiArtifactsToCircle
 
 deployment:
-  develop:
-    branch: develop
-    commands:
-      - ./gradlew -i artifactoryPublish
   release:
     tag: /\d+\.\d+\.\d+/
     commands:
