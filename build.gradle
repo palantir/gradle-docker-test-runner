@@ -99,7 +99,7 @@ bintray {
 bintrayUpload.dependsOn 'generatePomFileForBintrayPublication', 'sourceJar', 'build'
 
 bintrayUpload.onlyIf {
-    System.env.BINTRAY_USER && System.env.BINTRAY_KEY && project.version ==~ /\d+\.\d+\.\d+(-rc[0-9]+)?/
+    System.env.BINTRAY_USER && System.env.BINTRAY_KEY && project.version ==~ /\d+\.\d+\.\d+/
 }
 
 pluginBundle {
@@ -116,8 +116,7 @@ pluginBundle {
 }
 
 publishPlugins.onlyIf {
-    //project.version ==~ /\d+\.\d+\.\d+/
-    false
+    project.version ==~ /\d+\.\d+\.\d+/
 }
 
 jacocoTestReport {
