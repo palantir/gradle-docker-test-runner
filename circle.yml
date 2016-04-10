@@ -4,12 +4,16 @@ machine:
   java:
     version: oraclejdk7
   environment:
-    TERM: dumb
+    GRADLE_OPTS: '-Xmx2048m -XX:+HeapDumpOnOutOfMemoryError'
 
 checkout:
   post:
     - "[[ ! -s \"$(git rev-parse --git-dir)/shallow\" ]] || git fetch --unshallow"
     - git fetch --tags --all --prune
+
+dependencies:
+  override:
+    - ./gradlew resolveDependencies
 
 general:
   artifacts:
@@ -17,10 +21,9 @@ general:
 
 test:
   override:
-    - ./gradlew build
+    - ./gradlew --info build
   post:
-    - ./gradlew jacocoTestReport coveralls
-    - ./gradlew copyCiArtifactsToCircle
+    - ./gradlew jacocoTestReport coveralls copyCiArtifactsToCircle
 
 deployment:
   develop:
