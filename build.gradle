@@ -80,7 +80,7 @@ bintrayUpload.onlyIf {
 pluginBundle {
     website = 'https://github.com/palantir/gradle-docker-test-runner'
     vcsUrl = 'https://github.com/palantir/gradle-docker-test-runner'
-    description = 'Run unit tests and generate coverage reports in Docker containers'
+    description = 'Run tests and generate coverage reports in Docker containers'
     tags = ['docker', 'gradle', 'test']
 
     plugins {
