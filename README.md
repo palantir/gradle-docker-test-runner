@@ -69,6 +69,9 @@ The `dockerTestRunner` block offers the following options:
  task run in the container. The closure's delegate is set to be the
  JacocoReport task, so Jacoco properties such as `executionData` and `
  `sourceDirectories` can be configured using this closure.
+* (optional) `createGradleCacheVolumeImage` specifies the image that should be
+ used by the `createGradleCacheVolume` task. If it is null, then the image of
+ the first specified dockerRunner will be used.
 
 Configuration Examples
 ----------------------
@@ -127,8 +130,10 @@ Each environment has its own task group that contains 3 tasks:
 If there is at least one environment, then the following bulk tasks that run
 the tasks for all of the environments are added:
 * `buildDockerTestRunner`
+* `createGradleCacheVolume`
 * `jacocoTestReportDockerTestRunner` (if the Jacoco plugin is applied to the
  project)
+* `removeGradleCacheVolume`
 * `testDockerTestRunner`
 
 Build
@@ -161,6 +166,41 @@ location of the coverage reports is the same location used by the standard
 Gradle Jacoco reports task, but the name of the directory within the reports
 directory will be the test environment name. This task can be modified or
 configured using the `jacocoConfig` closure.
+
+Create Gradle Cache Volume
+--------------------------
+This tasks creates the Gradle cache Docker data volume and copies the content
+of the current Gradle user home directory into the data volume. This data
+volume is shared by all subprojects in a given Gradle project. The image that
+is used to perform the copy operation can be specified using the
+`createGradleCacheVolumeImage` property (by default, the image file of the
+first specified dockerRunner will be used). The image being used must already
+be built/present -- if a custom image is being used, ensure that it is built
+using the appropriate `build` task before invoking this task. This task
+typically only needs to be run in CI environments.
+
+In order to increase performance, the Docker test containers use a Docker
+[data volume](https://docs.docker.com/engine/userguide/containers/dockervolumes/)
+as the Gradle user home (the Gradle cache). The data volume is created by a
+container if it does not already exist. This means that, the first time a test
+container runs, it may need to download the Gradle dependencies into the cache.
+In local environments, incurring this one-time cost typically is not an issue
+because the data volume will persist. However, in CI environments this can be
+costly. In those scenarios, this task can be run before the other test tasks
+are run to copy the local Gradle cache into the Gradle cache Docker volume.
+
+Note that this task copies the entire contents of the Gradle user home
+directory, so if that directory is large (as it can be in local environments)
+this task may take a long time. This task should generally not be used if the
+local Gradle user home cache is large.
+
+Remove Gradle Cache Volume
+--------------------------
+Removes the Gradle cache Docker data volume using the `docker volume rm`
+command. Note that the `docker volume` command only exists in Docker 1.9.0 and
+later. This task will fail if the `docker volume` command is not available
+locally or if the volume could not be removed because it is in use by a
+container.
 
 Combining Coverage
 ------------------

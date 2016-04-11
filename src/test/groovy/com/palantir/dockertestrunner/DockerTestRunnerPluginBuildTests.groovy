@@ -20,8 +20,10 @@ import org.apache.commons.io.FileUtils
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
+import static org.junit.Assume.*
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import static org.hamcrest.Matcher.*
 import spock.lang.Specification
 
 import java.nio.file.Paths
@@ -163,6 +165,146 @@ class DockerTestRunnerPluginBuildTests extends Specification {
         buildResult.output =~ ('buildDockerTestRunner')
         buildResult.output =~ ('jacocoTestReportDockerTestRunner')
         buildResult.output =~ ('testDockerTestRunner')
+        buildResult.output =~ ('createGradleCacheVolume')
+        buildResult.output =~ ('removeGradleCacheVolume')
+    }
+
+    def 'verify buildDockerTestRunner only runs once per image even when in multiple subprojects'() {
+        given:
+        setupDockerGradleResources();
+
+        String busybox = 'custom-busybox'
+        File busyboxDir = temporaryFolder.newFolder(busybox)
+        File dockerFile = busyboxDir.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile();
+
+        dockerFile << '''
+            FROM busybox:latest
+        '''.stripIndent()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+            }
+
+            subprojects {
+                apply plugin: 'java'
+                apply plugin: 'com.palantir.docker-test-runner'
+
+                dockerTestRunner {
+                    dockerFiles fileTree(project.rootDir) {
+                        include '**/Dockerfile'
+                    }
+                }
+            }
+        '''.stripIndent()
+
+        // create subprojects
+        temporaryFolder.newFolder('test-subproject-one')
+        temporaryFolder.newFolder('test-subproject-two')
+        File settings = temporaryFolder.root.toPath().resolve('settings.gradle').toFile()
+        settings << '''
+            include 'test-subproject-one'
+            include 'test-subproject-two'
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('buildDockerTestRunner').build()
+
+        then:
+        buildResult.task(':test-subproject-one:buildDockerTestRunner').outcome == TaskOutcome.SUCCESS
+        buildResult.task(':test-subproject-two:buildDockerTestRunner').outcome == TaskOutcome.UP_TO_DATE
+    }
+
+    def 'verify createGradleCacheVolume only runs once even when in multiple subprojects'() {
+        given:
+        setupDockerGradleResources();
+
+        String openJdk7 = 'open-jdk-7'
+        File openJdk7Dir = temporaryFolder.newFolder(openJdk7)
+        openJdk7Dir.toPath().resolve("Dockerfile").toFile().createNewFile()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+            }
+
+            subprojects {
+                apply plugin: 'java'
+                apply plugin: 'com.palantir.docker-test-runner'
+
+                dockerTestRunner {
+                    dockerFiles fileTree(project.rootDir) {
+                        include '**/Dockerfile'
+                    }
+                    createGradleCacheVolumeImage = 'busybox'
+                }
+            }
+        '''.stripIndent()
+
+        // create subprojects
+        temporaryFolder.newFolder('test-subproject-one')
+        temporaryFolder.newFolder('test-subproject-two')
+        File settings = temporaryFolder.root.toPath().resolve('settings.gradle').toFile()
+        settings << '''
+            include 'test-subproject-one'
+            include 'test-subproject-two'
+        '''.stripIndent()
+
+        when:
+        BuildResult buildResult = run('createGradleCacheVolume').build()
+
+        then:
+        buildResult.task(':test-subproject-one:createGradleCacheVolume').outcome == TaskOutcome.SUCCESS
+        buildResult.task(':test-subproject-two:createGradleCacheVolume').outcome == TaskOutcome.SKIPPED
+    }
+
+    def 'verify removeGradleCacheVolume only runs once even when in multiple subprojects'() {
+        given:
+        setupDockerGradleResources();
+
+        String openJdk7 = 'open-jdk-7'
+        File openJdk7Dir = temporaryFolder.newFolder(openJdk7)
+        openJdk7Dir.toPath().resolve("Dockerfile").toFile().createNewFile()
+
+        buildFile << '''
+            plugins {
+                id 'java'
+            }
+
+            subprojects {
+                apply plugin: 'java'
+                apply plugin: 'com.palantir.docker-test-runner'
+
+                dockerTestRunner {
+                    dockerFiles fileTree(project.rootDir) {
+                        include '**/Dockerfile'
+                    }
+                    createGradleCacheVolumeImage = 'busybox'
+                }
+            }
+        '''.stripIndent()
+
+        // create subprojects
+        temporaryFolder.newFolder('test-subproject-one')
+        temporaryFolder.newFolder('test-subproject-two')
+        File settings = temporaryFolder.root.toPath().resolve('settings.gradle').toFile()
+        settings << '''
+            include 'test-subproject-one'
+            include 'test-subproject-two'
+        '''.stripIndent()
+
+        when:
+        // assume that 'docker volume' command exists
+        Process dockerVolume = 'docker volume'.execute()
+        dockerVolume.waitForOrKill(1000)
+        assumeTrue('"docker volume" command must exist for this test to work', dockerVolume.exitValue() == 0)
+
+        BuildResult buildResult = run('createGradleCacheVolume', 'removeGradleCacheVolume').build()
+
+        then:
+        buildResult.task(':test-subproject-one:removeGradleCacheVolume').outcome == TaskOutcome.SUCCESS
+        buildResult.task(':test-subproject-two:removeGradleCacheVolume').outcome == TaskOutcome.SKIPPED
     }
 
     def 'verify buildDockerTestRunner builds Docker image'() {

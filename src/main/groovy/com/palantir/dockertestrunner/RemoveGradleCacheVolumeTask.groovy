@@ -20,30 +20,28 @@ import org.gradle.api.tasks.Exec
 
 import java.util.concurrent.ConcurrentHashMap
 
-class BuildTask extends Exec {
+class RemoveGradleCacheVolumeTask extends Exec {
 
-    private static final Set<List<String>> CREATED = Collections.newSetFromMap(new ConcurrentHashMap<List<String>, Boolean>())
+    private static final Set<String> REMOVED = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>())
 
     /**
-     * Configures the task to build the Docker image specified by the provided Dockerfile. The image is tagged with
-     * the provided name and is built in the directory in which the provided image file resides.
+     * Configures the task to remove the Docker data volume that contains the Gradle cache files. Uses the
+     * 'docker volume rm' command, which requires Docker 1.9.0 or later. The volume must not be in use by any container.
      */
-    public void configure(String imageName, File dockerFile) {
-        workingDir(project.rootDir)
-
+    public void configure() {
+        String volumeName = DockerTestRunnerPlugin.getGradleDockerDataVolumeName(project)
         commandLine('docker',
-                'build',
-                '-f', dockerFile.absolutePath,
-                '-t', imageName,
-                dockerFile.parentFile.absolutePath)
+                    'volume',
+                    'rm',
+                    volumeName)
 
         // ensure that task only runs once per Gradle execution for a particular volume
         doLast {
-            BuildTask.CREATED.add([imageName, dockerFile.absolutePath])
+            RemoveGradleCacheVolumeTask.REMOVED.add(volumeName)
         }
 
         onlyIf {
-            !BuildTask.CREATED.contains([imageName, dockerFile.absolutePath])
+            return !RemoveGradleCacheVolumeTask.REMOVED.contains(volumeName)
         }
     }
 

@@ -24,19 +24,15 @@ class RunTask extends Exec {
     /**
      * Configures the task to run the Docker environment and execute a Gradle task within it. Executes the 'docker run'
      * command and executes './gradlew' for the specified task in the current project. Loads the project root directory
-     * as 'workspace' in the Docker container and loads the Docker, Gradle and Maven cache directories from the user's
-     * home directory into the container as well. If 'copyGradleCache' is true, then the Gradle cache from the host
-     * is copied into the container instead of being mounted and shared directly. Although the task will generally be
-     * faster if the Gradle cache is not copied, in environments with high parallelism it is possible for Gradle
-     * operations to lock if the same cache directory is shared across different concurrent Gradle builds, in which case
-     * copying the directory can solve the issue.
+     * as 'workspace' in the Docker container and loads the Docker and Maven cache directories from the user's home
+     * directory into the container as well. The Gradle cache Docker container is loaded as the Gradle cache directory.
      */
     public void configure(String taskName,
                           String containerName,
                           Multimap<String, String> customArguments) {
         workingDir(project.rootDir)
 
-        String projectGradleDataVolume = "${NameUtils.sanitizeForDocker(project.rootProject.name)}-gradle-data"
+        String projectGradleDataVolume = DockerTestRunnerPlugin.getGradleDockerDataVolumeName(project)
         String homeDir = System.getProperty('user.home')
 
         List<Object> arguments = []

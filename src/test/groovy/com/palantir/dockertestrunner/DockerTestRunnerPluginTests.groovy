@@ -3,6 +3,7 @@ package com.palantir.dockertestrunner
 import com.google.common.collect.ImmutableSet
 import org.gradle.api.Project
 import org.gradle.api.ProjectState
+import org.gradle.api.Task
 import org.gradle.api.internal.project.DefaultProject
 import org.gradle.api.internal.project.ProjectStateInternal
 import org.gradle.testfixtures.ProjectBuilder
@@ -92,7 +93,7 @@ class DockerTestRunnerPluginTests extends Specification {
         project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        // taks should be added with name that's parent directory + child file name
+        // task should be added with name that's parent directory + child file name
         project.tasks.find {
             it.name =~ 'jdk7/dockerfile'
         }
@@ -121,7 +122,7 @@ class DockerTestRunnerPluginTests extends Specification {
         project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        // taks should be added with specified name
+        // task should be added with specified name
         project.tasks.find {
             it.name =~ 'custom-jdk'
         }
@@ -150,7 +151,7 @@ class DockerTestRunnerPluginTests extends Specification {
         project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
 
         then:
-        // taks should be added with name that's parent directory + child file name
+        // task should be added with name that's parent directory + child file name
         project.tasks.find {
             it.name =~ 'jdk7/dockerfile'
         }
@@ -274,6 +275,68 @@ class DockerTestRunnerPluginTests extends Specification {
 
         then:
         project.tasks.getByName('testDockerTestRunner-jdk7/dockerfile').includes == ImmutableSet.of(projectInclude, testInclude)
+    }
+
+    def 'verify that create Gradle cache volume task is added'() {
+        given:
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
+
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
+
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner name: 'custom-jdk', dockerFile: dockerFile
+            dockerRunner name: 'second-jdk', dockerFile: dockerFile
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
+
+        then:
+        CreateGradleCacheVolumeTask task = project.tasks.find {
+            it.name =~ 'createGradleCacheVolume'
+        }
+        task != null
+        task.getCommandLine().contains('custom-jdk')
+    }
+
+    def 'verify that create Gradle cache volume task uses provided image'() {
+        given:
+        File parentFolder = temporaryFolder.newFolder("jdk7")
+        File dockerFile = parentFolder.toPath().resolve("Dockerfile").toFile()
+        dockerFile.createNewFile()
+
+        DefaultProject project = createRootProject()
+        project.apply plugin: 'java'
+
+        DockerTestRunnerPlugin plugin = new DockerTestRunnerPlugin()
+
+        when:
+        plugin.apply(project)
+        project.dockerTestRunner {
+            dockerRunner name: 'custom-jdk', dockerFile: dockerFile
+            dockerRunner name: 'second-jdk', dockerFile: dockerFile
+
+            createGradleCacheVolumeImage = 'busybox'
+        }
+
+        ProjectState state = new ProjectStateInternal()
+        state.executed()
+        project.getProjectEvaluationBroadcaster().afterEvaluate(project, state)
+
+        then:
+        CreateGradleCacheVolumeTask task = project.tasks.find {
+            it.name =~ 'createGradleCacheVolume'
+        }
+        task != null
+        task.getCommandLine().contains('busybox')
     }
 
 }

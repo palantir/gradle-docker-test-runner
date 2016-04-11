@@ -28,6 +28,10 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
     private static final String GROUP_NAME = 'Docker Test Runner'
     private static final String TASK_STRING = 'DockerTestRunner'
 
+    static String getGradleDockerDataVolumeName(Project project) {
+        return "${NameUtils.sanitizeForDocker(project.rootProject.name)}-gradle-data"
+    }
+
     static String getContainerRunName(Project project, String containerName) {
         return "${project.name}-${NameUtils.sanitizeForDocker(containerName)}"
     }
@@ -48,7 +52,7 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
                 String currGroupName = getGroupName(containerName)
 
                 // task that builds the image
-                BuildTask buildTask = project.tasks.create("build${TASK_STRING}-${containerName}", BuildTask, {
+                BuildTask buildTask = project.tasks.create(getBuildTaskName(containerName), BuildTask, {
                     group = currGroupName
                     description = "Build the Docker test environment image ${containerName}."
                 })
@@ -97,26 +101,42 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
 
             if (!dockerRunners.isEmpty()) {
                 // add tasks that will perform the individual tasks for all Dockerfiles
-                String allGroupName = getGroupName("All")
+                String allGroupName = getGroupName('All')
                 project.task("build${TASK_STRING}", {
                     group = allGroupName
-                    description = "Build all of the Docker test environment containers."
+                    description = 'Build all of the Docker test environment containers.'
                 }).setDependsOn(buildDockerTasks)
                 setTaskOrdering(buildDockerTasks)
 
                 project.task("test${TASK_STRING}", {
                     group = allGroupName
-                    description = "Run tests in all of the Docker test environment containers."
+                    description = 'Run tests in all of the Docker test environment containers.'
                 }).setDependsOn(testDockerTasks)
                 setTaskOrdering(testDockerTasks)
 
                 if (!jacocoDockerTasks.isEmpty()) {
                     project.task("jacocoTestReport${TASK_STRING}", {
                         group = allGroupName
-                        description = "Generate Jacoco coverage reports in all of the Docker test environment containers."
+                        description = 'Generate Jacoco coverage reports in all of the Docker test environment containers.'
                     }).setDependsOn(jacocoDockerTasks)
                     setTaskOrdering(jacocoDockerTasks)
                 }
+
+                CreateGradleCacheVolumeTask createCacheVolumeTask = project.tasks.create('createGradleCacheVolume', CreateGradleCacheVolumeTask) {
+                    group = allGroupName
+                    description = 'Create Gradle cache volume and copy current cache content into it.'
+                }
+                String createVolumeContainer = ext.createGradleCacheVolumeImage
+                if (createVolumeContainer == null) {
+                    createVolumeContainer = dockerRunners.keySet().first()
+                }
+                createCacheVolumeTask.configure(createVolumeContainer)
+
+                RemoveGradleCacheVolumeTask removeCacheVolumeTask = project.tasks.create('removeGradleCacheVolume', RemoveGradleCacheVolumeTask) {
+                    group = allGroupName
+                    description = 'Remove Gradle cache volume.'
+                }
+                removeCacheVolumeTask.configure()
             }
         }
     }
@@ -135,12 +155,16 @@ class DockerTestRunnerPlugin implements Plugin<Project> {
         return "${GROUP_NAME}: ${subGroup}"
     }
 
+    private static String getBuildTaskName(String containerName) {
+        return "build${TASK_STRING}-${containerName}"
+    }
+
     private static String getTestTaskName(String containerName) {
-        return "test${TASK_STRING}-${containerName}";
+        return "test${TASK_STRING}-${containerName}"
     }
 
     private static String getJacocoTaskName(String containerName) {
-        return "jacocoTestReport${TASK_STRING}-${containerName}";
+        return "jacocoTestReport${TASK_STRING}-${containerName}"
     }
 
 }
