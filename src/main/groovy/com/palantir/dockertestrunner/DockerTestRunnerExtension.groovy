@@ -78,6 +78,13 @@ class DockerTestRunnerExtension implements DockerRunnerConfig {
         return ImmutableMap.copyOf(dockerRunners)
     }
 
+    /**
+     * The image to use for the 'CreateGradleCacheVolumeTask' task. Can be the name of an image provided as a Docker
+     * runner or the name of any image that can be provided and resolved by 'docker run'. If null, then the image used
+     * by the first docker runner will be used.
+     */
+    String createGradleCacheVolumeImage
+
     private static String getDockerNameForFile(File file) {
         return "${NameUtils.sanitizeForDocker(file.parentFile.name)}/${NameUtils.sanitizeForDocker(file.name)}"
     }

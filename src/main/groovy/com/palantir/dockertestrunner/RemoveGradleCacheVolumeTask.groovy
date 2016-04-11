@@ -16,35 +16,33 @@
 
 package com.palantir.dockertestrunner
 
-import com.google.common.collect.Multimap
 import org.gradle.api.tasks.Exec
+
+import java.util.concurrent.ConcurrentHashMap
 
 class RemoveGradleCacheVolumeTask extends Exec {
 
+    private static final Set<String> REMOVED = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>())
+
     /**
-     * Configures the task to create a Docker data volume that contains the Gradle cache files using the provided
-     * container. A Gradle project will always have a single Gradle cache Docker data volume that is used by all
-     * projects (including subprojects). The name for the volume is deterministic based on the name of the root project.
-     * This command loads the Gradle cache Docker volume for the project (creating it if necessary) and copies the
-     * contents of the Gradle cache (determined by the 'gradleUserHomeDir' of the running Gradle task) into the Docker
-     * data volume. The container can be any container that supports the 'cp' operation (the container is only used to
-     * create the volume and invoke the copy operation). Generally, using an image that is already part of the project
-     * will be best for caching purposes, but any general image (including simple ones like 'busybox') can be used.
+     * Configures the task to remove the Docker data volume that contains the Gradle cache files. Uses the
+     * 'docker volume rm' command, which requires Docker 1.9.0 or later. The volume must not be in use by any container.
      */
-    public void configure(String containerName) {
-        workingDir(project.rootDir)
+    public void configure() {
+        String volumeName = DockerTestRunnerPlugin.getGradleDockerDataVolumeName(project)
+        commandLine('docker',
+                    'volume',
+                    'rm',
+                    volumeName)
 
-        String projectGradleDataVolume = DockerTestRunnerPlugin.getGradleDockerDataVolumeName(project)
+        // ensure that task only runs once per Gradle execution for a particular volume
+        doLast {
+            RemoveGradleCacheVolumeTask.REMOVED.add(volumeName)
+        }
 
-        List<Object> arguments = []
-        arguments << 'docker' << 'run'
-        arguments << '--rm'
-        arguments << '-v' << "${projectGradleDataVolume}:/dockerVolumeGradleData"
-        arguments << '-v' << "${project.gradle.gradleUserHomeDir.absolutePath}:/hostGradleData"
-        arguments << containerName
-        arguments << 'cp' << '-r' << '/hostGradleData/. /dockerVolumeGradleData/'
-
-        commandLine(arguments)
+        onlyIf {
+            return !RemoveGradleCacheVolumeTask.REMOVED.contains(volumeName)
+        }
     }
 
 }

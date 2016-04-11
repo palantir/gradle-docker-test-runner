@@ -16,10 +16,13 @@
 
 package com.palantir.dockertestrunner
 
-import com.google.common.collect.Multimap
 import org.gradle.api.tasks.Exec
 
+import java.util.concurrent.ConcurrentHashMap
+
 class CreateGradleCacheVolumeTask extends Exec {
+
+    private static final Set<String> CREATED = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>())
 
     /**
      * Configures the task to create a Docker data volume that contains the Gradle cache files using the provided
@@ -29,22 +32,29 @@ class CreateGradleCacheVolumeTask extends Exec {
      * contents of the Gradle cache (determined by the 'gradleUserHomeDir' of the running Gradle task) into the Docker
      * data volume. The container can be any container that supports the 'cp' operation (the container is only used to
      * create the volume and invoke the copy operation). Generally, using an image that is already part of the project
-     * will be best for caching purposes, but any general image (including simple ones like 'busybox') can be used.
+     * will be best for caching purposes, but any general image can be used.
      */
     public void configure(String containerName) {
         workingDir(project.rootDir)
 
         String projectGradleDataVolume = DockerTestRunnerPlugin.getGradleDockerDataVolumeName(project)
 
-        List<Object> arguments = []
-        arguments << 'docker' << 'run'
-        arguments << '--rm'
-        arguments << '-v' << "${projectGradleDataVolume}:/dockerVolumeGradleData"
-        arguments << '-v' << "${project.gradle.gradleUserHomeDir.absolutePath}:/hostGradleData"
-        arguments << containerName
-        arguments << 'cp' << '-r' << '/hostGradleData/. /dockerVolumeGradleData/'
+        commandLine('docker',
+                    'run',
+                    '--rm',
+                    '-v', "${projectGradleDataVolume}:/dockerVolumeGradleData",
+                    '-v', "${project.gradle.gradleUserHomeDir.absolutePath}:/hostGradleData",
+                    containerName,
+                    'cp', '-r', '/hostGradleData/.', '/dockerVolumeGradleData/')
 
-        commandLine(arguments)
+        // ensure that task only runs once per Gradle execution for a particular volume
+        doLast {
+            CreateGradleCacheVolumeTask.CREATED.add(projectGradleDataVolume)
+        }
+
+        onlyIf {
+            return !CreateGradleCacheVolumeTask.CREATED.contains(projectGradleDataVolume)
+        }
     }
 
 }
