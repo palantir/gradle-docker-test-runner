@@ -18,7 +18,11 @@ package com.palantir.dockertestrunner
 
 import org.gradle.api.tasks.Exec
 
+import java.util.concurrent.ConcurrentHashMap
+
 class BuildTask extends Exec {
+
+    private static final Set<List<String>> CREATED = Collections.newSetFromMap(new ConcurrentHashMap<List<String>, Boolean>())
 
     /**
      * Configures the task to build the Docker image specified by the provided Dockerfile. The image is tagged with
@@ -32,6 +36,15 @@ class BuildTask extends Exec {
                 '-f', dockerFile.absolutePath,
                 '-t', imageName,
                 dockerFile.parentFile.absolutePath)
+
+        // ensure that task only runs once per Gradle execution for a particular volume
+        doLast {
+            BuildTask.CREATED.add([imageName, dockerFile.absolutePath])
+        }
+
+        onlyIf {
+            !BuildTask.CREATED.contains([imageName, dockerFile.absolutePath])
+        }
     }
 
 }
