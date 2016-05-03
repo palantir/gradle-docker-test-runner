@@ -20,14 +20,14 @@ import org.apache.commons.io.FileUtils
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
-import static org.junit.Assume.*
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
-import static org.hamcrest.Matcher.*
 import spock.lang.Specification
 
 import java.nio.file.Paths
 import java.nio.file.attribute.PosixFilePermissions
+
+import static org.junit.Assume.assumeTrue
 
 class DockerTestRunnerPluginBuildTests extends Specification {
 
@@ -36,7 +36,6 @@ class DockerTestRunnerPluginBuildTests extends Specification {
 
     File projectDir
     File buildFile
-    List<File> pluginClasspath
 
     def setup() {
         projectDir = temporaryFolder.root
@@ -45,15 +44,6 @@ class DockerTestRunnerPluginBuildTests extends Specification {
         temporaryFolder.newFile('settings.gradle') << '''
             rootProject.name = 'dockerTestRunnerPluginTests'
         '''.stripIndent()
-
-        def pluginClasspathResource = getClass().classLoader.findResource("plugin-classpath.txt")
-        if (pluginClasspathResource == null) {
-            throw new IllegalStateException("Did not find plugin classpath resource, run `testClasses` build task.")
-        }
-
-        pluginClasspath = pluginClasspathResource.readLines()
-                .collect { it.replace('\\', '\\\\') } // escape backslashes in Windows paths
-                .collect { new File(it) }
     }
 
     /**
@@ -84,14 +74,14 @@ class DockerTestRunnerPluginBuildTests extends Specification {
             }
 
             dependencies {
-                compile 'com.google.guava:guava-jdk5:17.0'
+                compile 'com.google.guava:guava:19.0'
             }
         '''
     }
 
     private GradleRunner run(String... tasks) {
         GradleRunner.create()
-                .withPluginClasspath(pluginClasspath)
+                .withPluginClasspath()
                 .withProjectDir(projectDir)
                 .withArguments(tasks)
                 .withDebug(true)
