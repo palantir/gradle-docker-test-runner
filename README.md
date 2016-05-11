@@ -1,5 +1,7 @@
 Docker Test Runner Gradle Plugin
 ================================
+[![Circle CI](https://circleci.com/gh/palantir/gradle-docker-test-runner.svg?style=svg)](https://circleci.com/gh/palantir/gradle-docker-test-runner)
+
 This plugin provides a simple way to test Gradle projects in multiple
 different environments specified in Dockerfiles as part of a build. Given a set
 of Dockerfiles that contain the desired environments, this plugin adds tasks
